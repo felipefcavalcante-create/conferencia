@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Conferência">
+<meta name="theme-color" content="#0f172a">
+<title>Conferência de Cargas</title>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;-webkit-touch-callout:none}
+:root{--primary:#f59e0b;--success:#10b981;--error:#ef4444;--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#fff;--muted:#94a3b8}
+html,body{width:100%;height:100%;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);overflow:hidden}
+.container{width:100%;height:100vh;display:flex;flex-direction:column;background:linear-gradient(135deg,#0f172a,#1e293b);padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));gap:12px;overflow-y:auto}
+.header{text-align:center;padding:10px 0;border-bottom:2px solid rgba(245,158,11,.2)}
+.title{font-size:26px;font-weight:900;background:linear-gradient(135deg,#fbbf24,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sub{font-size:12px;color:var(--muted);margin-top:2px}
+.status{margin-top:8px;font-size:12px;padding:6px 12px;border-radius:20px;display:inline-block;font-weight:600}
+.status.ok{background:rgba(16,185,129,.15);color:#86efac;border:1px solid rgba(16,185,129,.3)}
+.status.loading{background:rgba(6,182,212,.15);color:#67e8f9;border:1px solid rgba(6,182,212,.3)}
+.status.err{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:block}
+select,input[type=text]{width:100%;padding:14px;background:var(--surface);border:2px solid var(--border);border-radius:12px;color:var(--text);font-size:16px;-webkit-appearance:none;appearance:none}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23cbd5e1' d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:40px}
+select:focus,input:focus{outline:none;border-color:var(--primary)}
+button{padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s;width:100%}
+button:active{transform:scale(.98);opacity:.85}
+.btn-primary{background:linear-gradient(135deg,#f59e0b,#d97706);color:#000}
+.btn-cam{background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff}
+.btn-success{background:linear-gradient(135deg,#10b981,#059669);color:#fff}
+.btn-sec{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
+.progress{background:rgba(30,41,59,.5);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.progress-top{display:flex;justify-content:space-between;align-items:center}
+.progress-num{font-size:26px;font-weight:900;color:var(--muted)}
+.progress-num.done{color:var(--success)}
+.bar{display:flex;gap:6px}
+.seg{flex:1;height:8px;border-radius:4px;background:var(--border);transition:.3s}
+.seg.on{background:var(--success)}
+.fb{padding:12px;border-radius:12px;border:2px solid;font-size:14px}
+.fb.ok{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.5);color:#86efac}
+.fb.no{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.5);color:#fca5a5}
+.fb.warn{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.5);color:#fcd34d}
+.hist-item.warn{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3);color:#fcd34d}
+.fb-code{font-family:Monaco,monospace;font-weight:700;margin-top:4px}
+.hist{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto}
+.hist-item{padding:10px;border-radius:8px;border:1px solid;font-size:12px;font-family:Monaco,monospace;display:flex;justify-content:space-between;align-items:center}
+.hist-item.ok{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.3);color:#86efac}
+.hist-item.no{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);color:#fca5a5}
+.done-screen{background:rgba(16,185,129,.1);border:2px solid var(--success);border-radius:14px;padding:18px;text-align:center}
+.done-icon{font-size:42px;margin-bottom:8px}
+.done-title{font-size:17px;font-weight:900;color:var(--success);text-transform:uppercase;margin-bottom:6px}
+.done-text{font-size:13px;color:var(--muted);margin-bottom:12px}
+.hidden{display:none!important}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:1000;pointer-events:none}
+.circle{width:120px;height:120px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:60px;animation:pop .3s ease-out}
+.circle.ok{background:rgba(16,185,129,.25);color:var(--success)}
+.circle.no{background:rgba(239,68,68,.25);color:var(--error)}
+.circle.warn{background:rgba(245,158,11,.25);color:var(--primary)}
+@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.cam-modal{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;padding:20px}
+#camVideo{width:100%;max-width:500px;border-radius:12px;margin-bottom:20px}
+.cam-wrap{position:relative;width:100%;max-width:500px;display:flex;justify-content:center}
+.mira{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:72%;height:42%;border:3px solid rgba(245,158,11,.9);border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
+.cam-status{color:#93c5fd;font-size:14px;margin-bottom:14px;text-align:center}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:10px}
+.config{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:14px}
+.origin-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);border-radius:12px;padding:10px 14px}
+.contadores{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.cont{border-radius:12px;padding:12px 6px;text-align:center;border:1px solid var(--border);background:var(--surface)}
+.cont.ok{border-color:rgba(16,185,129,.4)}
+.cont.no{border-color:rgba(239,68,68,.4)}
+.cont.warn{border-color:rgba(245,158,11,.4)}
+.cont-n{font-size:24px;font-weight:900}
+.cont.ok .cont-n{color:var(--success)}
+.cont.no .cont-n{color:var(--error)}
+.cont.warn .cont-n{color:var(--primary)}
+.cont-l{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.alarme{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px;animation:flash .5s steps(1,end) infinite}
+@keyframes flash{0%,100%{background:#b91c1c}50%{background:#450a0a}}
+.alarme-box{text-align:center;color:#fff;max-width:440px;width:100%}
+.alarme-icon{font-size:90px;line-height:1}
+.alarme-titulo{font-size:40px;font-weight:900;letter-spacing:1px;margin-top:6px}
+.alarme-sub{font-size:18px;font-weight:700;margin-top:6px}
+.alarme-info{background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.4);border-radius:14px;padding:16px;margin-top:18px;font-size:16px;line-height:1.5}
+.alarme-info b{font-size:20px}
+.btn-alarme{margin-top:20px;background:#fff;color:#b91c1c;font-size:18px;font-weight:900;padding:16px;border-radius:14px;width:100%;letter-spacing:.5px}
+small{color:var(--muted);font-size:11px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title">⚡ CONFERÊNCIA</div>
+    <div class="sub">Conferência de carrinhos por destino</div>
+    <div id="status" class="status loading">Carregando…</div>
+  </div>
+
+  <!-- Tela de configuração (só aparece se faltar a URL da API) -->
+  <div id="configScreen" class="config hidden">
+    <span class="label">Configuração inicial</span>
+    <small>Cole a URL "raw" do arquivo dados.json no GitHub e toque em Salvar. Você só faz isso uma vez.</small>
+    <input type="text" id="apiInput" placeholder="https://raw.githubusercontent.com/usuario/repo/main/dados.json" style="margin:10px 0">
+    <button class="btn-primary" onclick="salvarApi()">Salvar e conectar</button>
+  </div>
+
+  <!-- App principal -->
+  <div id="app" class="stack hidden">
+    <div id="originPicker">
+      <span class="label">Selecione a origem</span>
+      <select id="origin"><option value="">← Escolha uma origem</option></select>
+    </div>
+
+    <div id="originFixed" class="origin-bar hidden">
+      <div>
+        <span class="label" style="margin:0">Origem</span>
+        <div id="originName" style="font-weight:800;font-size:17px"></div>
+      </div>
+      <button class="btn-sec" style="width:auto;padding:8px 14px" onclick="trocarOrigem()">Trocar</button>
+    </div>
+
+    <div id="work" class="stack hidden">
+      <button class="btn-cam" id="camBtn" onclick="openCam()">📷 Bipar carrinho</button>
+
+      <div id="inputGroup">
+        <span class="label">Ou digite o ID do carrinho</span>
+        <input type="text" id="code" placeholder="ID do carrinho" autocomplete="off" inputmode="none">
+        <button class="btn-primary" id="confirm" style="margin-top:10px">Conferir</button>
+      </div>
+
+      <div id="fbBox"></div>
+
+      <div class="contadores">
+        <div class="cont ok"><div class="cont-n" id="cOk">0</div><div class="cont-l">Corretos</div></div>
+        <div class="cont no"><div class="cont-n" id="cErro">0</div><div class="cont-l">Errados</div></div>
+        <div class="cont warn"><div class="cont-n" id="cNf">0</div><div class="cont-l">Não achados</div></div>
+      </div>
+
+      <div id="histBox" class="hidden">
+        <span class="label">Histórico (<span id="hcount">0</span>)</span>
+        <div class="hist" id="hist"></div>
+      </div>
+
+      <button class="btn-sec hidden" id="reset" onclick="limparSessao()">Limpar histórico da sessão</button>
+    </div>
+
+    <button class="btn-sec" onclick="sync(true)">🔄 Atualizar dados da planilha</button>
+  </div>
+</div>
+
+<!-- ALARME de destino errado (tela cheia, exige confirmação) -->
+<div id="alarme" class="alarme hidden">
+  <div class="alarme-box">
+    <div class="alarme-icon">⛔</div>
+    <div class="alarme-titulo">CARGA ERRADA</div>
+    <div class="alarme-sub">Este carrinho NÃO é deste destino</div>
+    <div class="alarme-info">
+      <div>Carrinho <b id="alCarrinho"></b></div>
+      <div style="margin-top:8px">Destino correto: <b id="alDestino"></b></div>
+      <div>Você está carregando: <b id="alOrigem"></b></div>
+    </div>
+    <button class="btn-alarme" onclick="fecharAlarme()">ENTENDI — SEPARAR</button>
+  </div>
+</div>
+
+<div id="camModal" class="cam-modal hidden">
+  <div class="cam-status">Centralize o código de barras ou o QR na mira</div>
+  <div class="cam-wrap">
+    <video id="camVideo" playsinline></video>
+    <div class="mira"></div>
+  </div>
+  <button class="btn-sec" style="max-width:300px;margin-top:18px" onclick="closeCam()">❌ Fechar</button>
+</div>
+
+<div class="overlay hidden" id="overlay"><div class="circle" id="circle"></div></div>
+
+<script>
+/* ====== CONFIG ======
+   URL "raw" do arquivo dados.json no seu GitHub.
+   Já preenchida com seu usuário/repo. Se trocar de repo, ajuste aqui. */
+var DATA_URL = "https://raw.githubusercontent.com/felipefcavalcante-create/conferencia/main/dados.json";
+
+/* ====== ESTADO ====== */
+var ORIGENS = ['ETO1 - Gurupi','ETO2 - Araguaína','ETO3 - Guaraí','ETO5 - Redenção','ETO6 - Confresa','ETO7 - Xinguara','ETO8 - Santana','ETO9 - Ananás','ETO10 - Porto Nacional','EBA24 - Luis Eduardo Magalhães','EBA8 - Barreiras'];
+var carrinhos = {};        // { "14286063": "EBA24", ... }  carrinho -> destino
+var selectedOrigin = "";
+var scans = [];
+var cOk = 0, cErro = 0, cNf = 0;
+var reader = null, camOn = false;
+var audioCtx = null;
+
+/* ====== IndexedDB (cache offline) ====== */
+function idbGet(){return new Promise(function(res){var r=indexedDB.open("confDB",1);r.onupgradeneeded=function(e){e.target.result.createObjectStore("kv")};r.onsuccess=function(e){var db=e.target.result;try{var t=db.transaction("kv","readonly").objectStore("kv").get("dados");t.onsuccess=function(){res(t.result||null)};t.onerror=function(){res(null)}}catch(x){res(null)}};r.onerror=function(){res(null)}})}
+function idbSet(v){return new Promise(function(res){var r=indexedDB.open("confDB",1);r.onupgradeneeded=function(e){e.target.result.createObjectStore("kv")};r.onsuccess=function(e){var db=e.target.result;try{db.transaction("kv","readwrite").objectStore("kv").put(v,"dados");res()}catch(x){res()}};r.onerror=function(){res()}})}
+
+/* ====== INIT ====== */
+window.addEventListener('load', init);
+
+function getApiUrl(){
+  var u = new URLSearchParams(location.search).get('data') || new URLSearchParams(location.search).get('api');
+  if(u) return u;
+  if(DATA_URL) return DATA_URL;
+  return localStorage.getItem('api_url') || "";
+}
+
+async function init(){
+  ORIGENS.forEach(function(o){var op=document.createElement('option');op.value=o;op.textContent=o;document.getElementById('origin').appendChild(op)});
+  document.getElementById('origin').addEventListener('change', onOrigin);
+  document.getElementById('confirm').addEventListener('click', doScan);
+  document.getElementById('code').addEventListener('keydown', function(e){if(e.key==='Enter')doScan()});
+
+  var url = getApiUrl();
+  if(!url){ document.getElementById('configScreen').classList.remove('hidden'); setStatus('err','Falta configurar a URL'); return; }
+
+  // mostra cache imediatamente (rápido / offline) e sincroniza em seguida
+  var cached = await idbGet();
+  if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; showApp(); setStatus('ok', total()+' carrinhos (cache)'); }
+  sync(false);
+}
+
+function salvarApi(){
+  var u = document.getElementById('apiInput').value.trim();
+  if(!u){alert('Cole a URL primeiro');return;}
+  localStorage.setItem('api_url', u);
+  document.getElementById('configScreen').classList.add('hidden');
+  sync(false);
+}
+
+/* ====== SYNC ====== */
+async function sync(manual){
+  var url = getApiUrl();
+  if(!url) return;
+  setStatus('loading', manual ? 'Atualizando…' : 'Sincronizando…');
+  try{
+    var ctrl = new AbortController();
+    var to = setTimeout(function(){ctrl.abort()}, 20000);
+    var bust = (url.indexOf('?')>=0?'&':'?') + 't=' + Date.now();
+    var resp = await fetch(url + bust, {signal:ctrl.signal, redirect:'follow', cache:'no-store'});
+    clearTimeout(to);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    var json = await resp.json();
+    carrinhos = json.carrinhos || json;
+    await idbSet({carrinhos:carrinhos, atualizado:json.atualizado||new Date().toISOString()});
+    showApp();
+    setStatus('ok', total()+' carrinhos sincronizados');
+  }catch(err){
+    var cached = await idbGet();
+    if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; showApp(); setStatus('ok', total()+' carrinhos (cache — sem conexão)'); }
+    else setStatus('err','Sem conexão e sem cache. Toque para tentar de novo.');
+  }
+}
+
+function total(){ return Object.keys(carrinhos).length.toLocaleString('pt-BR'); }
+function setStatus(cls,txt){var s=document.getElementById('status');s.className='status '+cls;s.textContent=txt}
+function showApp(){document.getElementById('app').classList.remove('hidden')}
+
+/* ====== DISPATCHER ====== */
+function onOrigin(e){
+  selectedOrigin = e.target.value;
+  if(selectedOrigin){
+    document.getElementById('originName').textContent = selectedOrigin;
+    document.getElementById('originPicker').classList.add('hidden');
+    document.getElementById('originFixed').classList.remove('hidden');
+    document.getElementById('work').classList.remove('hidden');
+  }
+}
+function trocarOrigem(){
+  selectedOrigin = '';
+  document.getElementById('origin').value = '';
+  document.getElementById('originFixed').classList.add('hidden');
+  document.getElementById('originPicker').classList.remove('hidden');
+  document.getElementById('work').classList.add('hidden');
+}
+
+// Extrai a chave (prefixo tipo F12_PM1 ou número do carrinho) do que foi lido.
+function extrairCarrinho(raw){
+  raw = String(raw).trim().toUpperCase().replace(/^=+/, '');
+  if(carrinhos[raw] !== undefined) return raw;
+  // tenta pedaços separados por espaço / barra / vírgula (mantém _ e - do prefixo)
+  var partes = raw.split(/[\s,;|]+/);
+  for(var i=0;i<partes.length;i++){ if(partes[i] && carrinhos[partes[i]] !== undefined) return partes[i]; }
+  // tenta só os dígitos (caso o QR seja o número do carrinho com algo em volta)
+  var dig = raw.replace(/[^0-9]/g,'');
+  if(dig && carrinhos[dig] !== undefined) return dig;
+  return raw;   // devolve o que leu, pra exibir
+}
+
+function doScan(){
+  var raw = document.getElementById('code').value;
+  if(!raw || !selectedOrigin){ document.getElementById('code').value=''; return; }
+  var carrinho = extrairCarrinho(raw);
+  var originCode = selectedOrigin.split(' - ')[0];
+  var destino = carrinhos[carrinho];   // undefined se não achar
+
+  var tipo, msg;
+  if(destino === undefined){
+    tipo = 'nf';
+    cNf++;
+    msg = 'Carrinho não encontrado na base. Verifique o número.';
+  } else if(destino === originCode){
+    tipo = 'ok';
+    cOk++;
+    msg = 'Carrinho confere com o destino.';
+  } else {
+    tipo = 'erro';
+    cErro++;
+    msg = 'Destino correto: ' + destino;
+  }
+
+  scans.unshift({carrinho:carrinho, destino:destino||'—', tipo:tipo, t:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+  if(scans.length>50) scans.pop();
+
+  if(tipo === 'erro'){
+    alarme(carrinho, destino, selectedOrigin);
+  } else {
+    feedback(tipo, carrinho, msg);
+  }
+  render();
+  document.getElementById('code').value='';
+}
+
+function feedback(tipo, carrinho, msg){
+  var cfg = {
+    ok: { cls:'ok',   icon:'✓', titulo:'CORRETO' },
+    nf: { cls:'warn', icon:'⚠', titulo:'NÃO ENCONTRADO' }
+  }[tipo];
+
+  var c=document.getElementById('circle');
+  c.textContent=cfg.icon; c.className='circle '+cfg.cls;
+  document.getElementById('overlay').classList.remove('hidden');
+  setTimeout(function(){document.getElementById('overlay').classList.add('hidden')}, tipo==='ok'?500:1000);
+
+  document.getElementById('fbBox').innerHTML='<div class="fb '+cfg.cls+'">'
+    + '<strong>'+cfg.icon+' '+cfg.titulo+'</strong>'
+    + '<div style="margin-top:4px">'+msg+'</div>'
+    + '<div class="fb-code">Carrinho '+carrinho+'</div></div>';
+}
+
+/* ====== ALARME (destino errado) ====== */
+function alarme(carrinho, destino, origem){
+  document.getElementById('alCarrinho').textContent = carrinho;
+  document.getElementById('alDestino').textContent = destino;
+  document.getElementById('alOrigem').textContent = origem.split(' - ')[0];
+  document.getElementById('alarme').classList.remove('hidden');
+  document.getElementById('fbBox').innerHTML='<div class="fb no"><strong>⛔ CARGA ERRADA</strong><div style="margin-top:4px">Carrinho '+carrinho+' é do destino '+destino+'. Separe!</div></div>';
+  tocarAlarme();
+  if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]); // Android (iOS ignora)
+}
+function fecharAlarme(){
+  document.getElementById('alarme').classList.add('hidden');
+  pararAlarme();
+}
+
+/* ====== SOM (Web Audio) — funciona no iOS após o toque em "Bipar carrinho" ====== */
+function unlockAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){}
+}
+var alarmeTimer = null;
+function tocarAlarme(){
+  unlockAudio();
+  if(!audioCtx) return;
+  var i = 0;
+  function beep(){
+    try{
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.value = 0.25;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + 0.25);
+    }catch(e){}
+  }
+  beep();
+  alarmeTimer = setInterval(function(){ i++; if(i>8){pararAlarme();return;} beep(); }, 450);
+}
+function pararAlarme(){ if(alarmeTimer){ clearInterval(alarmeTimer); alarmeTimer=null; } }
+
+/* ====== CONTADORES + HISTÓRICO ====== */
+function render(){
+  document.getElementById('cOk').textContent = cOk;
+  document.getElementById('cErro').textContent = cErro;
+  document.getElementById('cNf').textContent = cNf;
+  document.getElementById('hcount').textContent = scans.length;
+  var h=document.getElementById('hist'); h.innerHTML='';
+  scans.forEach(function(s){
+    var cls = s.tipo==='ok' ? 'ok' : (s.tipo==='nf' ? 'warn' : 'no');
+    var marca = s.tipo==='ok' ? '✓' : (s.tipo==='nf' ? '⚠' : '✕');
+    var nota = s.tipo==='erro' ? (' → '+s.destino) : (s.tipo==='nf' ? ' [não achado]' : '');
+    var d=document.createElement('div');
+    d.className='hist-item '+cls;
+    d.innerHTML='<div><div>'+s.carrinho+nota+'</div><div style="font-size:10px;color:var(--muted)">'+s.t+'</div></div><div>'+marca+'</div>';
+    h.appendChild(d);
+  });
+  if(scans.length){ document.getElementById('histBox').classList.remove('hidden'); document.getElementById('reset').classList.remove('hidden'); }
+}
+
+function limparSessao(){
+  scans=[]; cOk=0; cErro=0; cNf=0;
+  document.getElementById('fbBox').innerHTML='';
+  document.getElementById('histBox').classList.add('hidden');
+  document.getElementById('reset').classList.add('hidden');
+  render();
+}
+
+/* ====== CÂMERA (somente jsQR, recorte central em alta resolução) ====== */
+var rafQR = null;
+
+function aoLer(text){
+  if(!camOn) return;
+  document.getElementById('code').value = String(text).trim().toUpperCase();
+  closeCam();
+  doScan();
+}
+
+async function openCam(){
+  unlockAudio();   // libera o som do alarme no iOS (este toque é o gesto do usuário)
+  var modal = document.getElementById('camModal');
+  var video = document.getElementById('camVideo');
+  modal.classList.remove('hidden');
+  camOn = true;
+  try{
+    var stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    video.srcObject = stream;
+    video.setAttribute('playsinline','');
+    video.muted = true;
+    await video.play();
+    loopQR();
+  }catch(err){
+    alert('Erro na câmera: ' + err.message);
+    closeCam();
+  }
+}
+
+function loopQR(){
+  var video = document.getElementById('camVideo');
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d', { willReadFrequently: true });
+  var ultimo = 0;
+  var pendente = null;   // exige ler o MESMO valor 2x seguidas antes de aceitar
+
+  (function tick(ts){
+    if(!camOn) return;
+    if(!ts) ts = 0;
+    if(ts - ultimo > 160){          // ~6 análises por segundo
+      ultimo = ts;
+      try{
+        var vw = video.videoWidth, vh = video.videoHeight;
+        if(vw && vh){
+          // QUADRO INTEIRO (nunca corta o QR), reduzido só se for muito grande
+          var maxLado = 1600;
+          var escala = Math.max(vw, vh) > maxLado ? maxLado / Math.max(vw, vh) : 1;
+          var cw = Math.round(vw * escala), ch = Math.round(vh * escala);
+          canvas.width = cw; canvas.height = ch;
+          ctx.drawImage(video, 0, 0, cw, ch);
+          var img = ctx.getImageData(0, 0, cw, ch);
+          var qr = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+          if(qr && qr.data){
+            if(qr.data === pendente){ aoLer(qr.data); return; }  // confirmado 2x
+            pendente = qr.data;                                   // 1ª vez: aguarda confirmar
+          } else {
+            pendente = null;
+          }
+        }
+      }catch(e){}
+    }
+    rafQR = requestAnimationFrame(tick);
+  })(0);
+}
+
+function closeCam(){
+  camOn = false;
+  if(rafQR){ cancelAnimationFrame(rafQR); rafQR = null; }
+  var video = document.getElementById('camVideo');
+  if(video && video.srcObject){
+    video.srcObject.getTracks().forEach(function(t){ t.stop(); });
+    video.srcObject = null;
+  }
+  document.getElementById('camModal').classList.add('hidden');
+}
+</script>
+</body>
+</html>
