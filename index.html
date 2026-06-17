@@ -82,7 +82,6 @@ button:active{transform:scale(.98);opacity:.85}
 .cont.warn .cont-n{color:var(--primary)}
 .cont.sq .cont-n{color:var(--muted)}
 .cont-l{font-size:9px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
-/* painel de rotas */
 .rotas-painel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px}
 .rotas-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .rotas-num{font-weight:900;font-size:18px;color:var(--primary)}
@@ -110,7 +109,6 @@ button:active{transform:scale(.98);opacity:.85}
 .rel-linha:last-child{border-bottom:none}
 .rel-linha .v{font-weight:800}
 .rel-vazio{color:var(--muted);font-size:13px;text-align:center;padding:8px}
-/* insumo */
 .insumo-titulo{font-weight:700;font-size:16px;text-align:center;margin-bottom:10px}
 .insumos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btn-insumo{background:var(--surface);color:var(--text);border:2px solid var(--border);border-radius:14px;padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer}
@@ -141,7 +139,6 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
     <div id="status" class="status loading">Carregando…</div>
   </div>
 
-  <!-- Tela de configuração (só aparece se faltar a URL da API) -->
   <div id="configScreen" class="config hidden">
     <span class="label">Configuração inicial</span>
     <small>Cole a URL "raw" do arquivo dados.json no GitHub e toque em Salvar. Você só faz isso uma vez.</small>
@@ -149,7 +146,6 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
     <button class="btn-primary" onclick="salvarApi()">Salvar e conectar</button>
   </div>
 
-  <!-- App principal -->
   <div id="app" class="stack hidden">
     <div id="originPicker">
       <span class="label">Selecione a origem</span>
@@ -180,7 +176,6 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
 
       <div id="fbBox"></div>
 
-      <!-- Etapa: escolher CLUSTER (aparece na carga sem QR) -->
       <div id="clusterStep" class="hidden">
         <div class="insumo-titulo">A carga é de qual cluster?</div>
         <div class="clusters-grid" id="clustersGrid"></div>
@@ -188,7 +183,6 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
         <button class="btn-sec" style="margin-top:8px" onclick="cancelarSemQR()">Cancelar</button>
       </div>
 
-      <!-- Etapa: escolher insumo (aparece após carga OK / após escolher cluster) -->
       <div id="insumoStep" class="hidden">
         <div class="insumo-titulo">Qual insumo foi utilizado?</div>
         <div class="insumos" id="insumosGrid"></div>
@@ -214,7 +208,6 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
   </div>
 </div>
 
-<!-- ALARME de destino errado (tela cheia, exige confirmação) -->
 <div id="alarme" class="alarme hidden">
   <div class="alarme-box">
     <div class="alarme-icon">⛔</div>
@@ -256,36 +249,30 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
 <div class="overlay hidden" id="overlay"><div class="circle" id="circle"></div></div>
 
 <script>
-/* ====== CONFIG ======
-   URL "raw" do arquivo dados.json no seu GitHub.
-   Já preenchida com seu usuário/repo. Se trocar de repo, ajuste aqui. */
 var DATA_URL = "https://raw.githubusercontent.com/felipefcavalcante-create/conferencia/main/dados.json";
 
-/* ====== ESTADO ====== */
 var ORIGENS = ['ETO1 - Gurupi','ETO2 - Araguaína','ETO3 - Guaraí','ETO5 - Redenção','ETO6 - Confresa','ETO7 - Xinguara','ETO8 - Santana','ETO9 - Ananás','ETO10 - Porto Nacional','EBA24 - Luis Eduardo Magalhães','EBA8 - Barreiras'];
-var carrinhos = {};        // { chave: {d:destino, c:cluster} }
-var clusters = {};         // { XPT: [cluster, cluster, ...] }
+var carrinhos = {};        
+var clusters = {};         
 var selectedOrigin = "";
-var clustersDoXpt = [];    // clusters do XPT selecionado
-var clustersFeitos = {};   // { cluster: true }  já conferidos nesta sessão
-var clusterQtd = {};       // { cluster: nº de insumos bipados }
+var clustersDoXpt = [];    
+var clustersFeitos = {};   
+var clusterQtd = {};       
 var scans = [];
 var cOk = 0, cErro = 0, cNf = 0, cSq = 0;
-var pendente = null;       // carga aguardando insumo {tipo, carrinho, clusters:[], destino}
-var hibridoEtapa = 0;      // 0 fora, 1 esperando 1ª rota, 2 esperando 2ª rota
+var pendente = null;       
+var hibridoEtapa = 0;      
 var hibridoClusters = [];
-var editandoId = null;     // id do registro sendo corrigido (insumo)
+var editandoId = null;     
 var reader = null, camOn = false;
 var audioCtx = null;
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 
 var INSUMOS = ['Manga Palete','Palete (Volumoso)','Gaiola','Gaylord'];
 
-/* ====== IndexedDB (cache offline) ====== */
 function idbGet(){return new Promise(function(res){var r=indexedDB.open("confDB",1);r.onupgradeneeded=function(e){e.target.result.createObjectStore("kv")};r.onsuccess=function(e){var db=e.target.result;try{var t=db.transaction("kv","readonly").objectStore("kv").get("dados");t.onsuccess=function(){res(t.result||null)};t.onerror=function(){res(null)}}catch(x){res(null)}};r.onerror=function(){res(null)}})}
 function idbSet(v){return new Promise(function(res){var r=indexedDB.open("confDB",1);r.onupgradeneeded=function(e){e.target.result.createObjectStore("kv")};r.onsuccess=function(e){var db=e.target.result;try{db.transaction("kv","readwrite").objectStore("kv").put(v,"dados");res()}catch(x){res()}};r.onerror=function(){res()}})}
 
-/* ====== INIT ====== */
 window.addEventListener('load', init);
 
 function getApiUrl(){
@@ -299,12 +286,11 @@ async function init(){
   ORIGENS.forEach(function(o){var op=document.createElement('option');op.value=o;op.textContent=o;document.getElementById('origin').appendChild(op)});
   document.getElementById('origin').addEventListener('change', onOrigin);
   montarInsumos();
-  limparDiasAntigos();   // remove progresso de dias anteriores
+  limparDiasAntigos();   
 
   var url = getApiUrl();
   if(!url){ document.getElementById('configScreen').classList.remove('hidden'); setStatus('err','Falta configurar a URL'); return; }
 
-  // mostra cache imediatamente (rápido / offline) e sincroniza em seguida
   var cached = await idbGet();
   if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; clusters = cached.clusters||{}; salvarPlano(); showApp(); restaurarOrigem(); setStatus('ok', totalCarr()+' carrinhos · base de '+horaBase(cached.atualizado)); }
   sync(false);
@@ -318,7 +304,6 @@ function salvarApi(){
   sync(false);
 }
 
-/* ====== SYNC ====== */
 async function sync(manual){
   var url = getApiUrl();
   if(!url) return;
@@ -348,7 +333,6 @@ async function sync(manual){
 }
 
 function totalCarr(){
-  // conta carrinhos (col B), ignorando as chaves de prefixo, pra não duplicar
   var n=0; for(var k in carrinhos){ if(/^[0-9]+$/.test(k)) n++; } return n.toLocaleString('pt-BR');
 }
 
@@ -364,7 +348,6 @@ function horaBase(iso){
 function setStatus(cls,txt){var s=document.getElementById('status');s.className='status '+cls;s.textContent=txt}
 function showApp(){document.getElementById('app').classList.remove('hidden')}
 
-/* ====== DISPATCHER ====== */
 function onOrigin(e){
   selectedOrigin = e.target.value;
   if(selectedOrigin){
@@ -372,10 +355,10 @@ function onOrigin(e){
     document.getElementById('originPicker').classList.add('hidden');
     document.getElementById('originFixed').classList.remove('hidden');
     document.getElementById('work').classList.remove('hidden');
-    carregarEstado();     // restaura contadores/histórico/progresso do dia para este XPT
-    carregarClusters();   // monta a lista de rotas do XPT (usa o progresso já restaurado)
+    carregarEstado();     
+    carregarClusters();   
     render();
-    salvarEstado();       // grava a origem atual (resume ao reabrir)
+    salvarEstado();       
     fecharInsumo();
   }
 }
@@ -388,7 +371,6 @@ function trocarOrigem(){
   fecharInsumo();
 }
 
-/* ====== PERSISTÊNCIA DO DIA (neste aparelho, por dia e por XPT) ====== */
 function chaveEstado(){ return 'estado_'+hojeStr()+'_'+selectedOrigin.split(' - ')[0]; }
 function salvarEstado(){
   if(!selectedOrigin) return;
@@ -453,43 +435,54 @@ function renderClusters(){
   });
 }
 
-// Extrai o número do carrinho do que foi lido.
-// O QR vem em JSON: {"CONTAINER_ID":10323923,"FACILITY_ID":"STO2",...}
-// Usa o CONTAINER_ID (o carrinho). O FACILITY_ID (origem/SVC) é ignorado.
-// Depois o app busca o XPT_DESTINO (coluna E) desse carrinho e compara com o XPT selecionado.
 function extrairCarrinho(raw){
   raw = String(raw).trim();
 
-  // QR em JSON
   try{
     var o = JSON.parse(raw);
     if(o && typeof o === 'object'){
-      // 1) preferir o CONTAINER_ID, se ele estiver na base
       if(o.CONTAINER_ID != null){
         var cid = String(o.CONTAINER_ID).trim().toUpperCase();
         if(carrinhos[cid] !== undefined) return cid;
       }
-      // 2) senão, qualquer valor do JSON que exista na base (ignora STO2, etc.)
       for(var k in o){
         var val = String(o[k]).trim().toUpperCase();
         if(carrinhos[val] !== undefined) return val;
       }
-      // 3) não achou na base: devolve o CONTAINER_ID limpo (pra exibir)
       if(o.CONTAINER_ID != null) return String(o.CONTAINER_ID).trim().toUpperCase();
     }
   }catch(e){}
 
-  // fallback: o QR pode trazer CONTAINER_ID em texto não-JSON
   var mm = raw.match(/CONTAINER_ID"?\s*:\s*"?([0-9A-Za-z_\-]+)/i);
   if(mm) return String(mm[1]).trim().toUpperCase();
 
-  // texto simples (número do carrinho ou prefixo tipo F12_PM1)
   var up = raw.toUpperCase().replace(/^=+/, '');
+  
+  // 1) Busca exata (Como bipado)
   if(carrinhos[up] !== undefined) return up;
+
+  // 2) Busca sem os espaços (Ex: DB tem "STO2-EBA24" mas o QR leu com espaços)
+  var noSpace = up.replace(/\s+/g, '');
+  if(carrinhos[noSpace] !== undefined) return noSpace;
+
+  // 3) Busca forçando 1 espaço exato ao redor do traço
+  var singleSpace = up.replace(/\s*-\s*/g, ' - ');
+  if(carrinhos[singleSpace] !== undefined) return singleSpace;
+
+  // 4) Se a etiqueta tiver formato "Origem - Destino", tenta achar só o código de destino
+  var partesTrac = up.split(/\s*-\s*/);
+  for(var i=0; i<partesTrac.length; i++){
+    if(partesTrac[i] && carrinhos[partesTrac[i]] !== undefined) return partesTrac[i];
+  }
+
+  // 5) Separa por outros delimitadores e testa partes individuais
   var partes = up.split(/[\s,;|]+/);
   for(var i=0;i<partes.length;i++){ if(partes[i] && carrinhos[partes[i]] !== undefined) return partes[i]; }
+  
+  // 6) Puxa apenas dígitos. Regra de segurança adicionada: >= 4 dígitos para não isolar "224" da palavra "EBA24" acidentalmente.
   var dig = up.replace(/[^0-9]/g,'');
-  if(dig && carrinhos[dig] !== undefined) return dig;
+  if(dig.length >= 4 && carrinhos[dig] !== undefined) return dig;
+
   return up;
 }
 
@@ -499,9 +492,33 @@ function doScan(raw){
   if(!raw || !selectedOrigin) return;
   var carrinho = extrairCarrinho(raw);
   var originCode = selectedOrigin.split(' - ')[0];
-  var info = carrinhos[carrinho];   // {d,r} ou undefined
+  var info = carrinhos[carrinho];
 
   if(info === undefined){
+    // NOVA DEFESA: Se o código QR não existe na base, mas ele é explicitamente a placa do destino atual
+    // Exemplo: O usuário selecionou EBA24 e bipou a placa literal "STO2 - EBA24"
+    if(carrinho.indexOf(originCode) >= 0) {
+       if(hibridoEtapa > 0) hibridoEtapa = 0; // Previne trava se estiver fazendo rota híbrida
+       
+       feedback('ok', carrinho, 'Destino validado pelo rótulo da rota! Agora selecione o cluster.');
+       // Cria uma carga virtual "pendente" válida pra avançar direto, mas obriga a escolher o cluster (pois não temos a info)
+       pendente = { tipo:'ok', carrinho:carrinho, clusters:[], destino:originCode };
+       
+       if(clustersDoXpt.length) abrirClusterPicker(); else abrirInsumo();
+       return;
+    }
+
+    // NOVA DEFESA: Se ele bipou a placa literal "STO2 - XXX" mas a placa é de OUTRO lugar (Tem traço e bate com outra origem cadastrada)
+    if(carrinho.indexOf(' - ') > 0 && ORIGENS.some(function(o){ return carrinho.indexOf(o.split(' - ')[0]) >= 0; })){
+       cErro++;
+       var destErrado = carrinho.split(' - ')[1] || 'Outro Destino';
+       scans.unshift({carrinho:carrinho, destino:destErrado, tipo:'erro', t:hora()});
+       if(scans.length>50) scans.pop();
+       alarme(carrinho, destErrado, selectedOrigin);
+       render(); salvarEstado();
+       return;
+    }
+
     cNf++;
     scans.unshift({carrinho:carrinho, tipo:'nf', t:hora()});
     if(scans.length>50) scans.pop();
@@ -509,6 +526,7 @@ function doScan(raw){
     render(); salvarEstado();
     return;
   }
+  
   if(info.d !== originCode){
     cErro++;
     scans.unshift({carrinho:carrinho, destino:info.d, tipo:'erro', t:hora()});
@@ -517,15 +535,14 @@ function doScan(raw){
     render(); salvarEstado();
     return;
   }
-  // CORRETO
+  
   if(hibridoEtapa > 0){
-    // modo rota híbrida: captura a rota e segue
     if(info.c && hibridoClusters.indexOf(info.c) < 0) hibridoClusters.push(info.c);
     if(hibridoEtapa === 1){
       hibridoEtapa = 2;
       feedback('ok', carrinho, '1ª rota OK ('+ (info.c||'sem cluster') +'). Agora bipe a 2ª rota.');
       document.getElementById('camStatus') && (document.getElementById('camStatus').textContent='Rota híbrida: bipe a 2ª rota');
-      openCam();   // reabre a câmera para a segunda leitura
+      openCam();   
     } else {
       hibridoEtapa = 0;
       feedback('ok', carrinho, '2ª rota OK ('+ (info.c||'sem cluster') +'). Informe o insumo.');
@@ -562,7 +579,6 @@ function feedback(tipo, carrinho, msg){
     + '<div class="fb-code">Carrinho '+carrinho+'</div></div>';
 }
 
-/* ====== ETAPA DE INSUMO ====== */
 function montarInsumos(){
   var grid=document.getElementById('insumosGrid'); grid.innerHTML='';
   INSUMOS.forEach(function(nome){
@@ -595,7 +611,6 @@ function fecharInsumo(){
   pendente=null; editandoId=null; hibridoEtapa=0;
 }
 function escolherInsumo(nome){
-  // modo correção: troca só o insumo de um registro existente
   if(editandoId){
     corrigirInsumoRegistro(editandoId, nome);
     fecharInsumo();
@@ -639,14 +654,12 @@ function corrigirInsumoRegistro(id, nome){
   }catch(e){}
 }
 
-/* ====== CARGA SEM QR (aderência) ====== */
 function cargaSemQR(){
   if(!selectedOrigin) return;
   pendente = { tipo:'semqr', clusters:[] };
   if(clustersDoXpt.length){
     abrirClusterPicker();
   } else {
-    // sem clusters cadastrados pra este XPT: vai direto pro insumo
     document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🚫 Carga sem QR</strong><div style="margin-top:4px">Selecione o insumo para registrar.</div></div>';
     abrirInsumo();
   }
@@ -679,7 +692,6 @@ function rotaNaoIdentificada(){
 }
 function cancelarSemQR(){ fecharInsumo(); document.getElementById('fbBox').innerHTML=''; }
 
-/* ====== LOG DO DIA (controle/aderência, neste aparelho) ====== */
 function hojeStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function logDia(reg){
   try{
@@ -690,7 +702,6 @@ function logDia(reg){
   }catch(e){}
 }
 
-/* ====== RELATÓRIO / RESUMO ====== */
 var relSelDia = '';
 function salvarPlano(){ try{ if(Object.keys(clusters).length) localStorage.setItem('plano_'+hojeStr(), JSON.stringify(clusters)); }catch(e){} }
 function diasComLog(){
@@ -717,7 +728,6 @@ function fecharRelatorio(){ document.getElementById('relModal').classList.add('h
 function selecionarDiaRel(d){ relSelDia=d; renderRelatorio(); }
 
 function renderRelatorio(){
-  // chips de dias (histórico)
   var dias=diasComLog();
   if(dias.indexOf(relSelDia)<0) dias.unshift(relSelDia);
   var dd=document.getElementById('relDias'); dd.innerHTML='';
@@ -742,7 +752,6 @@ function renderRelatorio(){
     if(r.tipo==='ok') porInsumo[r.insumo].com++; else porInsumo[r.insumo].sem++;
     if(!porXpt[xpt]) porXpt[xpt]={com:0,sem:0};
     if(r.tipo==='ok') porXpt[xpt].com++; else porXpt[xpt].sem++;
-    // rotas: usa o array (rota híbrida conta nas duas); senão o campo único
     var rotasReg = (r.clusters && r.clusters.length) ? r.clusters : (r.cluster ? [r.cluster] : ['(sem cluster)']);
     if(!cobertos[xpt]) cobertos[xpt]={};
     rotasReg.forEach(function(rt){
@@ -753,7 +762,6 @@ function renderRelatorio(){
   var total=comQR+semQR;
   var aderOp = total ? Math.round(comQR/total*100) : null;
 
-  // aderência dispatchers: por XPT, todas as rotas bipadas?
   var xpts=Object.keys(porXpt).sort();
   var dispLinhas=[], completos=0, avaliados=0;
   xpts.forEach(function(x){
@@ -772,7 +780,6 @@ function renderRelatorio(){
     document.getElementById('relConteudo').innerHTML=h; return;
   }
 
-  // dois indicadores lado a lado
   h+='<div class="ader-grid">';
   h+='<div class="rel-sec ader-card"><h4>Aderência operação</h4><div class="aderencia-n" style="color:'+cor(aderOp)+'">'+aderOp+'%</div><div class="aderencia-sub">com QR vs sem QR<br>'+comQR+' com · '+semQR+' sem · '+total+' cargas</div></div>';
   if(aderDisp!=null)
@@ -781,7 +788,6 @@ function renderRelatorio(){
     h+='<div class="rel-sec ader-card"><h4>Aderência dispatchers</h4><div class="aderencia-n" style="color:var(--muted)">—</div><div class="aderencia-sub">plano de rotas deste dia não foi registrado</div></div>';
   h+='</div>';
 
-  // detalhe por XPT (rotas bipadas / total) — maiores ofensores primeiro
   dispLinhas.sort(function(a,b){
     var ma=a.tot!=null?(a.tot-a.cob):-1, mb=b.tot!=null?(b.tot-b.cob):-1;
     return mb-ma;
@@ -795,7 +801,6 @@ function renderRelatorio(){
   });
   h+='</div>';
 
-  // insumos
   h+='<div class="rel-sec"><h4>Insumos utilizados</h4>';
   Object.keys(porInsumo).forEach(function(i){
     var o=porInsumo[i]; var t=o.com+o.sem; if(!t) return;
@@ -803,7 +808,6 @@ function renderRelatorio(){
   });
   h+='</div>';
 
-  // insumos por rota
   h+='<div class="rel-sec"><h4>Insumos por rota (cluster)</h4>';
   Object.keys(porRota).sort().forEach(function(r){
     h+='<div class="rel-linha"><span style="font-family:Monaco,monospace;font-size:13px">'+r+'</span><span class="v">'+porRota[r]+'</span></div>';
@@ -820,7 +824,6 @@ function exportarRelatorio(){
   var semQR=regs.filter(function(r){return r.tipo==='semqr';}).length;
   var total=comQR+semQR, aderOp=total?Math.round(comQR/total*100):0;
 
-  // rotas bipadas por XPT
   var cobertos={}, ativos={};
   regs.forEach(function(r){ var x=(r.origem||'').split(' - ')[0]||'—'; ativos[x]=true; if(!cobertos[x])cobertos[x]={}; if(r.cluster)cobertos[x][r.cluster]=true; });
   var completos=0, avaliados=0;
@@ -854,7 +857,6 @@ function exportarRelatorio(){
   document.body.appendChild(a); a.click(); a.remove();
 }
 
-/* ====== ÍCONES DOS INSUMOS (SVG) ====== */
 function svgInsumo(nome){
   var s='stroke="var(--primary)" stroke-width="2.4" fill="none" stroke-linejoin="round" stroke-linecap="round"';
   if(nome==='Palete (Volumoso)') return '<svg viewBox="0 0 64 64"><rect x="16" y="12" width="32" height="28" '+s+'/><line x1="16" y1="22" x2="48" y2="22" '+s+'/><rect x="8" y="46" width="48" height="6" '+s+'/><line x1="16" y1="52" x2="16" y2="58" '+s+'/><line x1="32" y1="52" x2="32" y2="58" '+s+'/><line x1="48" y1="52" x2="48" y2="58" '+s+'/></svg>';
@@ -864,7 +866,6 @@ function svgInsumo(nome){
   return '<svg viewBox="0 0 64 64"><rect x="14" y="14" width="36" height="36" '+s+'/></svg>';
 }
 
-/* ====== ALARME (destino errado) ====== */
 function alarme(carrinho, destino, origem){
   document.getElementById('alCarrinho').textContent = carrinho;
   document.getElementById('alDestino').textContent = destino;
@@ -872,14 +873,13 @@ function alarme(carrinho, destino, origem){
   document.getElementById('alarme').classList.remove('hidden');
   document.getElementById('fbBox').innerHTML='<div class="fb no"><strong>⛔ CARGA ERRADA</strong><div style="margin-top:4px">Carrinho '+carrinho+' é do destino '+destino+'. Separe!</div></div>';
   tocarAlarme();
-  if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]); // Android (iOS ignora)
+  if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]); 
 }
 function fecharAlarme(){
   document.getElementById('alarme').classList.add('hidden');
   pararAlarme();
 }
 
-/* ====== SOM (Web Audio) — funciona no iOS após o toque em "Bipar carrinho" ====== */
 function unlockAudio(){
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -906,7 +906,6 @@ function tocarAlarme(){
 }
 function pararAlarme(){ if(alarmeTimer){ clearInterval(alarmeTimer); alarmeTimer=null; } }
 
-/* ====== CONTADORES + HISTÓRICO ====== */
 function render(){
   document.getElementById('cOk').textContent = cOk;
   document.getElementById('cErro').textContent = cErro;
@@ -940,7 +939,6 @@ function limparSessao(){
   renderClusters(); render();
 }
 
-/* ====== CÂMERA (somente jsQR, recorte central em alta resolução) ====== */
 var rafQR = null;
 
 function aoLer(text){
@@ -992,7 +990,6 @@ function aplicarFocoContinuo(){
   }catch(e){}
 }
 function focarCamera(){
-  // toque na tela: pede um reajuste de foco (quando o aparelho suporta)
   if(!videoTrack || !videoTrack.applyConstraints) return;
   try{
     var cap = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
@@ -1026,17 +1023,17 @@ function loopQR(){
   var canvas = document.createElement('canvas');
   var ctx = canvas.getContext('2d', { willReadFrequently: true });
   var ultimo = 0;
-  var confirma = null;   // exige ler o MESMO valor 2x seguidas antes de aceitar
+  var confirma = null;   
 
   (function tick(ts){
     if(!camOn) return;
     if(!ts) ts = 0;
-    if(ts - ultimo > 110){          // ~9 análises por segundo
+    if(ts - ultimo > 110){          
       ultimo = ts;
       try{
         var vw = video.videoWidth, vh = video.videoHeight;
         if(vw && vh){
-          var maxLado = 1920;       // resolução de análise maior = QR denso/menor lê melhor
+          var maxLado = 1920;       
           var escala = Math.max(vw, vh) > maxLado ? maxLado / Math.max(vw, vh) : 1;
           var cw = Math.round(vw * escala), ch = Math.round(vh * escala);
           canvas.width = cw; canvas.height = ch;
