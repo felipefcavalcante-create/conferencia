@@ -10,7 +10,6 @@
 <title>Conferência de Cargas</title>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
-/* Todo o CSS original foi mantido intacto */
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;-webkit-touch-callout:none}
 :root{--primary:#f59e0b;--success:#10b981;--error:#ef4444;--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#fff;--muted:#94a3b8}
 html,body{width:100%;height:100%;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);overflow:hidden}
@@ -142,15 +141,9 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
     <div id="status" class="status loading">Carregando…</div>
   </div>
 
-  <div id="configScreen" class="config hidden">
-    <span class="label">Configuração inicial</span>
-    <small style="display:block;margin-bottom:8px">Cole a URL do JSON Base:</small>
-    <input type="text" id="apiInput" placeholder="URL do dados.json" style="margin-bottom:10px">
-    
-    <small style="display:block;margin-bottom:8px">Cole a URL do Apps Script (Google Sheets):</small>
-    <input type="text" id="gasInput" placeholder="https://script.google.com/macros/s/.../exec" style="margin-bottom:10px">
-    
-    <button class="btn-primary" onclick="salvarApi()">Salvar e conectar</button>
+  <div id="devWarning" class="config hidden" style="border-color: var(--error); background: rgba(239,68,68,0.1);">
+    <span class="label" style="color: var(--error); font-size: 14px;">⛔ ATENÇÃO DESENVOLVEDOR</span>
+    <small style="font-size: 13px; color: #fff;">Você escolheu extinguir a tela de configuração, mas esqueceu de colar a URL do Google Apps Script dentro do código HTML (na variável GAS_URL).</small>
   </div>
 
   <div id="app" class="stack hidden">
@@ -256,7 +249,15 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
 <div class="overlay hidden" id="overlay"><div class="circle" id="circle"></div></div>
 
 <script>
+// =======================================================================
+// CONFIGURAÇÕES CHUMBADAS (O PULO DO GATO)
+// =======================================================================
 var DATA_URL = "https://raw.githubusercontent.com/felipefcavalcante-create/conferencia/main/dados.json";
+var GAS_URL  = "https://script.google.com/a/macros/mercadolivre.com/s/AKfycbyhtrg93kAx0S85OmU9hKUdOiXzM-NJc9rhYOeBObgCF1QMug9pgY3D7mPghmrHpvNDuw/exec"; 
+
+function getApiUrl(){ return DATA_URL; }
+function getGasUrl(){ return GAS_URL; }
+// =======================================================================
 
 var ORIGENS = ['ETO1 - Gurupi','ETO2 - Araguaína','ETO3 - Guaraí','ETO5 - Redenção','ETO6 - Confresa','ETO7 - Xinguara','ETO8 - Santana','ETO9 - Ananás','ETO10 - Porto Nacional','EBA24 - Luis Eduardo Magalhães','EBA8 - Barreiras'];
 var carrinhos = {};        
@@ -284,37 +285,20 @@ function idbSet(v){return new Promise(function(res){var r=indexedDB.open("confDB
 
 window.addEventListener('load', init);
 
-function getApiUrl(){ return localStorage.getItem('api_url') || DATA_URL; }
-function getGasUrl(){ return localStorage.getItem('gas_url') || ""; }
-
 async function init(){
   ORIGENS.forEach(function(o){var op=document.createElement('option');op.value=o;op.textContent=o;document.getElementById('origin').appendChild(op)});
   document.getElementById('origin').addEventListener('change', onOrigin);
   montarInsumos();
 
-  var url = getApiUrl();
-  var gas = getGasUrl();
-  
-  if(!url || !gas){ 
-    document.getElementById('configScreen').classList.remove('hidden'); 
-    document.getElementById('apiInput').value = url;
-    document.getElementById('gasInput').value = gas;
-    setStatus('err','Falta configurar as URLs'); 
-    return; 
+  // Trava de segurança para garantir que a URL não ficou vazia
+  if(GAS_URL === "COLE_AQUI_A_URL_DO_GOOGLE_TERMINADA_EM_/EXEC" || !GAS_URL) {
+    document.getElementById('devWarning').classList.remove('hidden');
+    setStatus('err','Falta URL do Google'); 
+    return;
   }
 
   var cached = await idbGet();
   if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; clusters = cached.clusters||{}; salvarPlano(); showApp(); restaurarOrigem(); setStatus('ok', totalCarr()+' carrinhos · base cacheada'); }
-  sync(false);
-}
-
-function salvarApi(){
-  var u = document.getElementById('apiInput').value.trim();
-  var g = document.getElementById('gasInput').value.trim();
-  if(!u || !g){alert('Preencha as duas URLs');return;}
-  localStorage.setItem('api_url', u);
-  localStorage.setItem('gas_url', g);
-  document.getElementById('configScreen').classList.add('hidden');
   sync(false);
 }
 
