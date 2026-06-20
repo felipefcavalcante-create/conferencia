@@ -10,6 +10,7 @@
 <title>Conferência de Cargas</title>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
+/* Todo o CSS original foi mantido intacto */
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;-webkit-touch-callout:none}
 :root{--primary:#f59e0b;--success:#10b981;--error:#ef4444;--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#fff;--muted:#94a3b8}
 html,body{width:100%;height:100%;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);overflow:hidden}
@@ -21,6 +22,7 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:-apple-system,
 .status.ok{background:rgba(16,185,129,.15);color:#86efac;border:1px solid rgba(16,185,129,.3)}
 .status.loading{background:rgba(6,182,212,.15);color:#67e8f9;border:1px solid rgba(6,182,212,.3)}
 .status.err{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.status.syncing{background:rgba(245,158,11,.15);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
 .label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:block}
 select,input[type=text]{width:100%;padding:14px;background:var(--surface);border:2px solid var(--border);border-radius:12px;color:var(--text);font-size:16px;-webkit-appearance:none;appearance:none}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23cbd5e1' d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:40px}
@@ -129,20 +131,25 @@ button:active{transform:scale(.98);opacity:.85}
 .alarme-info b{font-size:20px}
 .btn-alarme{margin-top:20px;background:#fff;color:#b91c1c;font-size:18px;font-weight:900;padding:16px;border-radius:14px;width:100%;letter-spacing:.5px}
 small{color:var(--muted);font-size:11px;line-height:1.5}
+.sync-indicador{font-size:10px; text-align:center; color:var(--muted); margin-top:8px;}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
     <div class="title">⚡ CONFERÊNCIA</div>
-    <div class="sub">Conferência de carrinhos por destino</div>
+    <div class="sub">Conferência sincronizada</div>
     <div id="status" class="status loading">Carregando…</div>
   </div>
 
   <div id="configScreen" class="config hidden">
     <span class="label">Configuração inicial</span>
-    <small>Cole a URL "raw" do arquivo dados.json no GitHub e toque em Salvar. Você só faz isso uma vez.</small>
-    <input type="text" id="apiInput" placeholder="https://raw.githubusercontent.com/usuario/repo/main/dados.json" style="margin:10px 0">
+    <small style="display:block;margin-bottom:8px">Cole a URL do JSON Base:</small>
+    <input type="text" id="apiInput" placeholder="URL do dados.json" style="margin-bottom:10px">
+    
+    <small style="display:block;margin-bottom:8px">Cole a URL do Apps Script (Google Sheets):</small>
+    <input type="text" id="gasInput" placeholder="https://script.google.com/macros/s/.../exec" style="margin-bottom:10px">
+    
     <button class="btn-primary" onclick="salvarApi()">Salvar e conectar</button>
   </div>
 
@@ -196,15 +203,16 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
       </div>
 
       <div id="histBox" class="hidden">
-        <span class="label">Histórico (<span id="hcount">0</span>)</span>
+        <span class="label">Histórico da Base (<span id="hcount">0</span>)</span>
         <div class="hist" id="hist"></div>
       </div>
 
-      <button class="btn-sec hidden" id="reset" onclick="limparSessao()">Limpar histórico da sessão</button>
-    </div>
+      <div id="syncTime" class="sync-indicador"></div>
 
-    <button class="btn-sec" onclick="abrirRelatorio()">📊 Resumo / Relatório</button>
-    <button class="btn-sec" onclick="sync(true)">🔄 Atualizar dados da planilha</button>
+    </div>
+    
+    <button class="btn-sec" onclick="abrirRelatorio()">📊 Resumo / Relatório (Nuvem)</button>
+    <button class="btn-sec" onclick="syncAppScriptManual()">🔄 Forçar Atualização com a Nuvem</button>
   </div>
 </div>
 
@@ -230,7 +238,6 @@ small{color:var(--muted);font-size:11px;line-height:1.5}
     </div>
     <div id="relDias" class="rel-dias"></div>
     <div id="relConteudo"></div>
-    <button class="btn-primary" onclick="exportarRelatorio()">📥 Exportar CSV do dia</button>
   </div>
 </div>
 
@@ -266,6 +273,8 @@ var hibridoClusters = [];
 var editandoId = null;     
 var reader = null, camOn = false;
 var audioCtx = null;
+var syncInterval = null;
+
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 
 var INSUMOS = ['Manga Palete','Palete (Volumoso)','Gaiola','Gaylord'];
@@ -275,75 +284,134 @@ function idbSet(v){return new Promise(function(res){var r=indexedDB.open("confDB
 
 window.addEventListener('load', init);
 
-function getApiUrl(){
-  var u = new URLSearchParams(location.search).get('data') || new URLSearchParams(location.search).get('api');
-  if(u) return u;
-  if(DATA_URL) return DATA_URL;
-  return localStorage.getItem('api_url') || "";
-}
+function getApiUrl(){ return localStorage.getItem('api_url') || DATA_URL; }
+function getGasUrl(){ return localStorage.getItem('gas_url') || ""; }
 
 async function init(){
   ORIGENS.forEach(function(o){var op=document.createElement('option');op.value=o;op.textContent=o;document.getElementById('origin').appendChild(op)});
   document.getElementById('origin').addEventListener('change', onOrigin);
   montarInsumos();
-  limparDiasAntigos();   
 
   var url = getApiUrl();
-  if(!url){ document.getElementById('configScreen').classList.remove('hidden'); setStatus('err','Falta configurar a URL'); return; }
+  var gas = getGasUrl();
+  
+  if(!url || !gas){ 
+    document.getElementById('configScreen').classList.remove('hidden'); 
+    document.getElementById('apiInput').value = url;
+    document.getElementById('gasInput').value = gas;
+    setStatus('err','Falta configurar as URLs'); 
+    return; 
+  }
 
   var cached = await idbGet();
-  if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; clusters = cached.clusters||{}; salvarPlano(); showApp(); restaurarOrigem(); setStatus('ok', totalCarr()+' carrinhos · base de '+horaBase(cached.atualizado)); }
+  if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; clusters = cached.clusters||{}; salvarPlano(); showApp(); restaurarOrigem(); setStatus('ok', totalCarr()+' carrinhos · base cacheada'); }
   sync(false);
 }
 
 function salvarApi(){
   var u = document.getElementById('apiInput').value.trim();
-  if(!u){alert('Cole a URL primeiro');return;}
+  var g = document.getElementById('gasInput').value.trim();
+  if(!u || !g){alert('Preencha as duas URLs');return;}
   localStorage.setItem('api_url', u);
+  localStorage.setItem('gas_url', g);
   document.getElementById('configScreen').classList.add('hidden');
   sync(false);
 }
 
+// Sincroniza a base de dados do Github
 async function sync(manual){
   var url = getApiUrl();
   if(!url) return;
-  setStatus('loading', manual ? 'Atualizando…' : 'Sincronizando…');
   try{
-    var ctrl = new AbortController();
-    var to = setTimeout(function(){ctrl.abort()}, 20000);
     var bust = (url.indexOf('?')>=0?'&':'?') + 't=' + Date.now();
-    var resp = await fetch(url + bust, {signal:ctrl.signal, redirect:'follow', cache:'no-store'});
-    clearTimeout(to);
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    var resp = await fetch(url + bust, {redirect:'follow', cache:'no-store'});
     var json = await resp.json();
     carrinhos = json.carrinhos || {};
     clusters = json.clusters || {};
-    var quando = json.atualizado || new Date().toISOString();
-    await idbSet({carrinhos:carrinhos, clusters:clusters, atualizado:quando});
+    await idbSet({carrinhos:carrinhos, clusters:clusters, atualizado:new Date().toISOString()});
     salvarPlano();
     showApp();
     restaurarOrigem();
     if(selectedOrigin) carregarClusters();
-    setStatus('ok', totalCarr()+' carrinhos · base de '+horaBase(quando));
+    setStatus('ok', totalCarr()+' carrinhos base');
   }catch(err){
-    var cached = await idbGet();
-    if(cached && cached.carrinhos){ carrinhos = cached.carrinhos; clusters = cached.clusters||{}; showApp(); if(selectedOrigin) carregarClusters(); setStatus('ok', totalCarr()+' carrinhos · base de '+horaBase(cached.atualizado)+' (offline)'); }
-    else setStatus('err','Sem conexão e sem cache. Toque para tentar de novo.');
+    console.log(err);
   }
 }
 
-function totalCarr(){
-  var n=0; for(var k in carrinhos){ if(/^[0-9]+$/.test(k)) n++; } return n.toLocaleString('pt-BR');
+// --- COMUNICAÇÃO COM GOOGLE APPS SCRIPT ---
+function syncAppScriptManual() {
+  document.getElementById('syncTime').textContent = "Sincronizando com a nuvem...";
+  carregarEstadoGAS();
 }
 
-function horaBase(iso){
-  try{
-    var d = new Date(iso);
-    var hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
-    var dia = String(d.getDate()).padStart(2,'0'), mes = String(d.getMonth()+1).padStart(2,'0');
-    return dia+'/'+mes+' '+hh+':'+mm;
-  }catch(e){ return '—'; }
+async function enviarParaGAS(reg, isEdit) {
+  var gas = getGasUrl();
+  if(!gas) return;
+  try {
+    var payload = {
+      action: isEdit ? "edit" : "add",
+      payload: {
+        id: reg.id, dia: hojeStr(), hora: reg.t, origem: selectedOrigin,
+        tipo: reg.tipo, insumo: reg.insumo, carrinho: reg.carrinho,
+        cluster: reg.cluster, clusters: reg.clusters || []
+      }
+    };
+    fetch(gas, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }).catch(e=>{}); // Deixa rodar em background
+  } catch(e){}
 }
+
+async function carregarEstadoGAS(){
+  if(!selectedOrigin) return;
+  var gas = getGasUrl();
+  if(!gas) return;
+
+  try{
+    var url = gas + "?dia=" + hojeStr() + "&origem=" + encodeURIComponent(selectedOrigin);
+    var resp = await fetch(url);
+    var json = await resp.json();
+    if(json.status === 'ok') {
+      scans = json.data || [];
+      recalcularContadores();
+      renderClusters();
+      render();
+      document.getElementById('syncTime').textContent = "Última sincronização: " + hora();
+    }
+  }catch(e){
+    document.getElementById('syncTime').textContent = "Erro ao sincronizar. Tentando novamente em breve.";
+  }
+}
+
+function recalcularContadores() {
+  cOk=0; cErro=0; cNf=0; cSq=0; 
+  clustersFeitos={}; clusterQtd={};
+  
+  // Limpa o local para os erros e nf (já que não mandamos nf/erro pro Sheets)
+  var localData = [];
+  try{ localData = JSON.parse(localStorage.getItem(chaveEstado()) || "[]"); }catch(e){}
+  cErro = localData.filter(x => x.tipo === 'erro').length;
+  cNf = localData.filter(x => x.tipo === 'nf').length;
+  
+  // Reconta baseado na Nuvem (scans)
+  scans.forEach(function(s){
+    if(s.tipo === 'ok') cOk++;
+    if(s.tipo === 'semqr') cSq++;
+    var cls = s.clusters || (s.cluster ? [s.cluster] : []);
+    cls.forEach(function(c){ 
+      if(c && c !== '(sem cluster)') {
+        clustersFeitos[c] = true; 
+        clusterQtd[c] = (clusterQtd[c]||0)+1; 
+      }
+    });
+  });
+}
+// ------------------------------------------
+
+function totalCarr(){ var n=0; for(var k in carrinhos){ if(/^[0-9]+$/.test(k)) n++; } return n.toLocaleString('pt-BR'); }
+function horaBase(iso){ try{ var d=new Date(iso); return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(e){ return '—'; } }
 
 function setStatus(cls,txt){var s=document.getElementById('status');s.className='status '+cls;s.textContent=txt}
 function showApp(){document.getElementById('app').classList.remove('hidden')}
@@ -355,43 +423,40 @@ function onOrigin(e){
     document.getElementById('originPicker').classList.add('hidden');
     document.getElementById('originFixed').classList.remove('hidden');
     document.getElementById('work').classList.remove('hidden');
-    carregarEstado();      
+    
+    // Inicia a sincronização
+    document.getElementById('syncTime').textContent = "Baixando histórico da nuvem...";
+    carregarEstadoGAS();
+    
+    // Configura o Poll a cada 15 segundos
+    if(syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(carregarEstadoGAS, 15000);
+
     carregarClusters();    
-    render();
-    salvarEstado();        
     fecharInsumo();
+    localStorage.setItem('ultimaOrigem', JSON.stringify({dia:hojeStr(), origem:selectedOrigin}));
   }
 }
+
 function trocarOrigem(){
   selectedOrigin = '';
   document.getElementById('origin').value = '';
   document.getElementById('originFixed').classList.add('hidden');
   document.getElementById('originPicker').classList.remove('hidden');
   document.getElementById('work').classList.add('hidden');
+  if(syncInterval) clearInterval(syncInterval);
   fecharInsumo();
 }
 
-function chaveEstado(){ return 'estado_'+hojeStr()+'_'+selectedOrigin.split(' - ')[0]; }
-function salvarEstado(){
-  if(!selectedOrigin) return;
+function chaveEstado(){ return 'estado_err_'+hojeStr()+'_'+selectedOrigin.split(' - ')[0]; }
+function salvarErroLocal(carrinho, destino, tipo){
   try{
-    localStorage.setItem(chaveEstado(), JSON.stringify({
-      cOk:cOk, cErro:cErro, cNf:cNf, cSq:cSq, scans:scans,
-      feitos:clustersFeitos, qtd:clusterQtd
-    }));
-    localStorage.setItem('ultimaOrigem', JSON.stringify({dia:hojeStr(), origem:selectedOrigin}));
+    var arr = JSON.parse(localStorage.getItem(chaveEstado())||"[]");
+    arr.push({carrinho:carrinho, destino:destino, tipo:tipo, t:hora()});
+    localStorage.setItem(chaveEstado(), JSON.stringify(arr));
   }catch(e){}
 }
-function carregarEstado(){
-  cOk=0; cErro=0; cNf=0; cSq=0; scans=[]; clustersFeitos={}; clusterQtd={};
-  try{
-    var s=localStorage.getItem(chaveEstado());
-    if(s){ var e=JSON.parse(s);
-      cOk=e.cOk||0; cErro=e.cErro||0; cNf=e.cNf||0; cSq=e.cSq||0;
-      scans=e.scans||[]; clustersFeitos=e.feitos||{}; clusterQtd=e.qtd||{};
-    }
-  }catch(e){}
-}
+
 function restaurarOrigem(){
   if(selectedOrigin) return;
   try{
@@ -402,21 +467,13 @@ function restaurarOrigem(){
     }
   }catch(e){}
 }
-function limparDiasAntigos(){
-  try{
-    var pref='estado_'+hojeStr()+'_';
-    for(var i=localStorage.length-1;i>=0;i--){
-      var k=localStorage.key(i);
-      if(k && k.indexOf('estado_')===0 && k.indexOf(pref)!==0) localStorage.removeItem(k);
-    }
-  }catch(e){}
-}
 
 function carregarClusters(){
   var code = selectedOrigin.split(' - ')[0];
   clustersDoXpt = (clusters[code] || []).slice();
   renderClusters();
 }
+
 function renderClusters(){
   var painel = document.getElementById('rotasPainel');
   if(!clustersDoXpt.length){ painel.classList.add('hidden'); return; }
@@ -437,52 +494,15 @@ function renderClusters(){
 
 function extrairCarrinho(raw){
   raw = String(raw).trim();
-
-  try{
-    var o = JSON.parse(raw);
-    if(o && typeof o === 'object'){
-      if(o.CONTAINER_ID != null){
-        var cid = String(o.CONTAINER_ID).trim().toUpperCase();
-        if(carrinhos[cid] !== undefined) return cid;
-      }
-      for(var k in o){
-        var val = String(o[k]).trim().toUpperCase();
-        if(carrinhos[val] !== undefined) return val;
-      }
-      if(o.CONTAINER_ID != null) return String(o.CONTAINER_ID).trim().toUpperCase();
-    }
-  }catch(e){}
-
-  var mm = raw.match(/CONTAINER_ID"?\s*:\s*"?([0-9A-Za-z_\-]+)/i);
-  if(mm) return String(mm[1]).trim().toUpperCase();
-
-  var up = raw.toUpperCase().replace(/^=+/, '');
-  
-  // 1) Busca exata (Como bipado)
-  if(carrinhos[up] !== undefined) return up;
-
-  // 2) Busca sem os espaços (Ex: DB tem "STO2-EBA24" mas o QR leu com espaços)
-  var noSpace = up.replace(/\s+/g, '');
-  if(carrinhos[noSpace] !== undefined) return noSpace;
-
-  // 3) Busca forçando 1 espaço exato ao redor do traço
-  var singleSpace = up.replace(/\s*-\s*/g, ' - ');
-  if(carrinhos[singleSpace] !== undefined) return singleSpace;
-
-  // 4) Se a etiqueta tiver formato "Origem - Destino", tenta achar só o código de destino
-  var partesTrac = up.split(/\s*-\s*/);
-  for(var i=0; i<partesTrac.length; i++){
-    if(partesTrac[i] && carrinhos[partesTrac[i]] !== undefined) return partesTrac[i];
-  }
-
-  // 5) Separa por outros delimitadores e testa partes individuais
-  var partes = up.split(/[\s,;|]+/);
-  for(var i=0;i<partes.length;i++){ if(partes[i] && carrinhos[partes[i]] !== undefined) return partes[i]; }
-  
-  // 6) Puxa apenas dígitos. Regra de segurança adicionada: >= 4 dígitos para não isolar "224" da palavra "EBA24" acidentalmente.
-  var dig = up.replace(/[^0-9]/g,'');
-  if(dig.length >= 4 && carrinhos[dig] !== undefined) return dig;
-
+  try{ var o=JSON.parse(raw); if(o&&typeof o==='object'){ if(o.CONTAINER_ID!=null){var cid=String(o.CONTAINER_ID).trim().toUpperCase();if(carrinhos[cid]!==undefined)return cid;} for(var k in o){var val=String(o[k]).trim().toUpperCase();if(carrinhos[val]!==undefined)return val;} if(o.CONTAINER_ID!=null)return String(o.CONTAINER_ID).trim().toUpperCase(); } }catch(e){}
+  var mm=raw.match(/CONTAINER_ID"?\s*:\s*"?([0-9A-Za-z_\-]+)/i); if(mm) return String(mm[1]).trim().toUpperCase();
+  var up=raw.toUpperCase().replace(/^=+/,'');
+  if(carrinhos[up]!==undefined)return up;
+  var noSpace=up.replace(/\s+/g,''); if(carrinhos[noSpace]!==undefined)return noSpace;
+  var singleSpace=up.replace(/\s*-\s*/g,' - '); if(carrinhos[singleSpace]!==undefined)return singleSpace;
+  var partesTrac=up.split(/\s*-\s*/); for(var i=0;i<partesTrac.length;i++){if(partesTrac[i]&&carrinhos[partesTrac[i]]!==undefined)return partesTrac[i];}
+  var partes=up.split(/[\s,;|]+/); for(var i=0;i<partes.length;i++){if(partes[i]&&carrinhos[partes[i]]!==undefined)return partes[i];}
+  var dig=up.replace(/[^0-9]/g,''); if(dig.length>=4&&carrinhos[dig]!==undefined)return dig;
   return up;
 }
 
@@ -495,45 +515,30 @@ function doScan(raw){
   var info = carrinhos[carrinho];
 
   if(info === undefined){
-    // NOVA DEFESA: Se o código QR não existe na base, mas ele é explicitamente a placa do destino atual
-    // Exemplo: O usuário selecionou EBA24 e bipou a placa literal "STO2 - EBA24"
     if(carrinho.indexOf(originCode) >= 0) {
-       if(hibridoEtapa > 0) hibridoEtapa = 0; // Previne trava se estiver fazendo rota híbrida
-       
+       if(hibridoEtapa > 0) hibridoEtapa = 0;
        feedback('ok', carrinho, 'Destino validado pelo rótulo da rota! Agora selecione o cluster.');
-       // Cria uma carga virtual "pendente" válida pra avançar direto, mas obriga a escolher o cluster (pois não temos a info)
        pendente = { tipo:'ok', carrinho:carrinho, clusters:[], destino:originCode };
-       
        if(clustersDoXpt.length) abrirClusterPicker(); else abrirInsumo();
        return;
     }
-
-    // NOVA DEFESA: Se ele bipou a placa literal "STO2 - XXX" mas a placa é de OUTRO lugar (Tem traço e bate com outra origem cadastrada)
     if(carrinho.indexOf(' - ') > 0 && ORIGENS.some(function(o){ return carrinho.indexOf(o.split(' - ')[0]) >= 0; })){
        cErro++;
-       var destErrado = carrinho.split(' - ')[1] || 'Outro Destino';
-       scans.unshift({carrinho:carrinho, destino:destErrado, tipo:'erro', t:hora()});
-       if(scans.length>50) scans.pop();
-       alarme(carrinho, destErrado, selectedOrigin);
-       render(); salvarEstado();
-       return;
+       salvarErroLocal(carrinho, carrinho.split(' - ')[1] || 'Outro', 'erro');
+       alarme(carrinho, carrinho.split(' - ')[1] || 'Outro Destino', selectedOrigin);
+       render(); return;
     }
-
     cNf++;
-    scans.unshift({carrinho:carrinho, tipo:'nf', t:hora()});
-    if(scans.length>50) scans.pop();
+    salvarErroLocal(carrinho, '', 'nf');
     feedback('nf', carrinho, 'Carrinho não está na base do dia. Verifique o número.');
-    render(); salvarEstado();
-    return;
+    render(); return;
   }
   
   if(info.d !== originCode){
     cErro++;
-    scans.unshift({carrinho:carrinho, destino:info.d, tipo:'erro', t:hora()});
-    if(scans.length>50) scans.pop();
+    salvarErroLocal(carrinho, info.d, 'erro');
     alarme(carrinho, info.d, selectedOrigin);
-    render(); salvarEstado();
-    return;
+    render(); return;
   }
   
   if(hibridoEtapa > 0){
@@ -541,7 +546,6 @@ function doScan(raw){
     if(hibridoEtapa === 1){
       hibridoEtapa = 2;
       feedback('ok', carrinho, '1ª rota OK ('+ (info.c||'sem cluster') +'). Agora bipe a 2ª rota.');
-      document.getElementById('camStatus') && (document.getElementById('camStatus').textContent='Rota híbrida: bipe a 2ª rota');
       openCam();   
     } else {
       hibridoEtapa = 0;
@@ -560,23 +564,17 @@ function iniciarHibrido(){
   if(!selectedOrigin) return;
   hibridoEtapa = 1;
   hibridoClusters = [];
-  document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🔀 Rota híbrida</strong><div style="margin-top:4px">Bipe a 1ª rota; depois a 2ª. Conta como 1 insumo em 2 rotas.</div></div>';
+  document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🔀 Rota híbrida</strong><div style="margin-top:4px">Bipe a 1ª rota; depois a 2ª.</div></div>';
   openCam();
 }
 
 function feedback(tipo, carrinho, msg){
-  var cfg = {
-    ok: { cls:'ok',   icon:'✓', titulo:'CORRETO' },
-    nf: { cls:'warn', icon:'⚠', titulo:'NÃO ENCONTRADO' }
-  }[tipo];
+  var cfg = { ok: { cls:'ok', icon:'✓', titulo:'CORRETO' }, nf: { cls:'warn', icon:'⚠', titulo:'NÃO ENCONTRADO' } }[tipo];
   var c=document.getElementById('circle');
   c.textContent=cfg.icon; c.className='circle '+cfg.cls;
   document.getElementById('overlay').classList.remove('hidden');
   setTimeout(function(){document.getElementById('overlay').classList.add('hidden')}, tipo==='ok'?500:1000);
-  document.getElementById('fbBox').innerHTML='<div class="fb '+cfg.cls+'">'
-    + '<strong>'+cfg.icon+' '+cfg.titulo+'</strong>'
-    + '<div style="margin-top:4px">'+msg+'</div>'
-    + '<div class="fb-code">Carrinho '+carrinho+'</div></div>';
+  document.getElementById('fbBox').innerHTML='<div class="fb '+cfg.cls+'"><strong>'+cfg.icon+' '+cfg.titulo+'</strong><div style="margin-top:4px">'+msg+'</div><div class="fb-code">Carrinho '+carrinho+'</div></div>';
 }
 
 function montarInsumos(){
@@ -589,32 +587,19 @@ function montarInsumos(){
     grid.appendChild(b);
   });
 }
-function esconderBotoes(){
-  document.getElementById('camBtn').style.display='none';
-  document.getElementById('semQrBtn').style.display='none';
-  document.getElementById('hibridoBtn').style.display='none';
-}
-function mostrarBotoes(){
-  document.getElementById('camBtn').style.display='block';
-  document.getElementById('semQrBtn').style.display='block';
-  document.getElementById('hibridoBtn').style.display='block';
-}
-function abrirInsumo(){
-  document.getElementById('clusterStep').classList.add('hidden');
-  document.getElementById('insumoStep').classList.remove('hidden');
-  esconderBotoes();
-}
-function fecharInsumo(){
-  document.getElementById('insumoStep').classList.add('hidden');
-  document.getElementById('clusterStep').classList.add('hidden');
-  mostrarBotoes();
-  pendente=null; editandoId=null; hibridoEtapa=0;
-}
+function esconderBotoes(){ document.getElementById('camBtn').style.display='none'; document.getElementById('semQrBtn').style.display='none'; document.getElementById('hibridoBtn').style.display='none'; }
+function mostrarBotoes(){ document.getElementById('camBtn').style.display='block'; document.getElementById('semQrBtn').style.display='block'; document.getElementById('hibridoBtn').style.display='block'; }
+function abrirInsumo(){ document.getElementById('clusterStep').classList.add('hidden'); document.getElementById('insumoStep').classList.remove('hidden'); esconderBotoes(); }
+function fecharInsumo(){ document.getElementById('insumoStep').classList.add('hidden'); document.getElementById('clusterStep').classList.add('hidden'); mostrarBotoes(); pendente=null; editandoId=null; hibridoEtapa=0; }
+
 function escolherInsumo(nome){
   if(editandoId){
-    corrigirInsumoRegistro(editandoId, nome);
-    fecharInsumo();
-    render(); salvarEstado();
+    var s = scans.find(function(x){return x.id===editandoId;});
+    if(s) {
+      s.insumo = nome;
+      enviarParaGAS(s, true); // Update on GAS
+    }
+    fecharInsumo(); render();
     document.getElementById('fbBox').innerHTML='<div class="fb ok"><strong>✓ Insumo corrigido</strong><div style="margin-top:4px">Agora: '+nome+'</div></div>';
     return;
   }
@@ -631,11 +616,11 @@ function escolherInsumo(nome){
     cls.forEach(function(c){ clustersFeitos[c]=true; clusterQtd[c]=(clusterQtd[c]||0)+1; });
     reg={id:id, carrinho:'(sem QR)', clusters:cls, cluster:cls.join(' + '), tipo:'semqr', insumo:nome, t:hora()};
   }
-  scans.unshift(reg); if(scans.length>50) scans.pop();
-  logDia(reg);
+  scans.unshift(reg);
+  enviarParaGAS(reg, false); // PUSH TO GOOGLE SHEETS
   fecharInsumo();
-  document.getElementById('fbBox').innerHTML='<div class="fb ok"><strong>✓ Registrado</strong><div style="margin-top:4px">Insumo: '+nome+(reg.cluster?(' · '+(reg.clusters.length>1?'rotas ':'rota ')+reg.cluster):'')+'</div></div>';
-  renderClusters(); render(); salvarEstado();
+  document.getElementById('fbBox').innerHTML='<div class="fb ok"><strong>✓ Registrado</strong><div style="margin-top:4px">Insumo: '+nome+'</div></div>';
+  renderClusters(); render();
 }
 
 function editarInsumo(id){
@@ -643,26 +628,12 @@ function editarInsumo(id){
   document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>✎ Corrigir insumo</strong><div style="margin-top:4px">Escolha o insumo correto.</div></div>';
   abrirInsumo();
 }
-function corrigirInsumoRegistro(id, nome){
-  var s = scans.find(function(x){return x.id===id;});
-  if(s) s.insumo = nome;
-  try{
-    var k='log_'+hojeStr();
-    var arr=JSON.parse(localStorage.getItem(k)||'[]');
-    for(var i=0;i<arr.length;i++){ if(arr[i].id===id){ arr[i].insumo=nome; break; } }
-    localStorage.setItem(k, JSON.stringify(arr));
-  }catch(e){}
-}
 
 function cargaSemQR(){
   if(!selectedOrigin) return;
   pendente = { tipo:'semqr', clusters:[] };
-  if(clustersDoXpt.length){
-    abrirClusterPicker();
-  } else {
-    document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🚫 Carga sem QR</strong><div style="margin-top:4px">Selecione o insumo para registrar.</div></div>';
-    abrirInsumo();
-  }
+  if(clustersDoXpt.length) abrirClusterPicker();
+  else { document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🚫 Carga sem QR</strong></div>'; abrirInsumo(); }
 }
 function abrirClusterPicker(){
   var grid=document.getElementById('clustersGrid'); grid.innerHTML='';
@@ -678,75 +649,38 @@ function abrirClusterPicker(){
   document.getElementById('insumoStep').classList.add('hidden');
   esconderBotoes();
 }
-function escolherCluster(c){
-  if(!pendente) return;
-  pendente.clusters = [c];
-  document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🚫 Carga sem QR · cluster '+c+'</strong><div style="margin-top:4px">Agora selecione o insumo.</div></div>';
-  abrirInsumo();
-}
-function rotaNaoIdentificada(){
-  if(!pendente) return;
-  pendente.clusters = [];
-  document.getElementById('fbBox').innerHTML='<div class="fb warn"><strong>🚫 Sem QR · rota não identificada</strong><div style="margin-top:4px">Selecione o insumo para registrar mesmo assim.</div></div>';
-  abrirInsumo();
-}
+function escolherCluster(c){ if(!pendente) return; pendente.clusters=[c]; abrirInsumo(); }
+function rotaNaoIdentificada(){ if(!pendente) return; pendente.clusters=[]; abrirInsumo(); }
 function cancelarSemQR(){ fecharInsumo(); document.getElementById('fbBox').innerHTML=''; }
 
 function hojeStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function logDia(reg){
-  try{
-    var k='log_'+hojeStr();
-    var arr=JSON.parse(localStorage.getItem(k)||'[]');
-    arr.push({id:reg.id, origem:selectedOrigin, tipo:reg.tipo, insumo:reg.insumo||'', carrinho:reg.carrinho||'', cluster:reg.cluster||'', clusters:reg.clusters||[], hora:reg.t});
-    localStorage.setItem(k, JSON.stringify(arr));
-  }catch(e){}
-}
 
-var relSelDia = '';
 function salvarPlano(){ try{ if(Object.keys(clusters).length) localStorage.setItem('plano_'+hojeStr(), JSON.stringify(clusters)); }catch(e){} }
-function diasComLog(){
-  var dias=[];
-  try{
-    for(var i=0;i<localStorage.length;i++){
-      var k=localStorage.key(i);
-      if(k && k.indexOf('log_')===0) dias.push(k.slice(4));
-    }
-  }catch(e){}
-  dias.sort().reverse();
-  return dias;
-}
-function lerLogDia(dia){ try{ return JSON.parse(localStorage.getItem('log_'+dia)||'[]'); }catch(e){ return []; } }
-function formatDia(s){ var p=s.split('-'); return p.length===3 ? (p[2]+'/'+p[1]) : s; }
 
+// ----- RELATÓRIO PELA NUVEM -----
 function abrirRelatorio(){
-  var dias=diasComLog();
-  relSelDia = dias.length ? (dias.indexOf(hojeStr())>=0?hojeStr():dias[0]) : hojeStr();
-  renderRelatorio();
   document.getElementById('relModal').classList.remove('hidden');
+  document.getElementById('relConteudo').innerHTML = '<div style="text-align:center;padding:20px;">Consultando dados da nuvem...</div>';
+  renderRelatorioNuvem();
 }
 function fecharRelatorio(){ document.getElementById('relModal').classList.add('hidden'); }
-function selecionarDiaRel(d){ relSelDia=d; renderRelatorio(); }
 
-function renderRelatorio(){
-  var dias=diasComLog();
-  if(dias.indexOf(relSelDia)<0) dias.unshift(relSelDia);
+async function renderRelatorioNuvem(){
+  var gas = getGasUrl();
+  if(!gas) return;
   var dd=document.getElementById('relDias'); dd.innerHTML='';
-  dias.forEach(function(d){
-    var b=document.createElement('div');
-    b.className='rel-dia'+(d===relSelDia?' sel':'');
-    b.textContent=formatDia(d)+' ('+lerLogDia(d).length+')';
-    b.onclick=function(){ selecionarDiaRel(d); };
-    dd.appendChild(b);
-  });
-
-  var regs=lerLogDia(relSelDia);
-  var plano=null; try{ plano=JSON.parse(localStorage.getItem('plano_'+relSelDia)||'null'); }catch(e){}
+  
+  var resp = await fetch(gas + "?dia=" + hojeStr() + "&origem=" + encodeURIComponent(selectedOrigin));
+  var json = await resp.json();
+  var regs = json.data || [];
+  
+  var plano=null; try{ plano=JSON.parse(localStorage.getItem('plano_'+hojeStr())||'null'); }catch(e){}
 
   var comQR=0, semQR=0;
   var porInsumo={}, porXpt={}, porRota={}, cobertos={};
   INSUMOS.forEach(function(i){porInsumo[i]={com:0,sem:0};});
   regs.forEach(function(r){
-    var xpt=(r.origem||'').split(' - ')[0]||'—';
+    var xpt = selectedOrigin.split(' - ')[0] || '—';
     if(r.tipo==='ok') comQR++; else if(r.tipo==='semqr') semQR++;
     if(porInsumo[r.insumo]===undefined) porInsumo[r.insumo]={com:0,sem:0};
     if(r.tipo==='ok') porInsumo[r.insumo].com++; else porInsumo[r.insumo].sem++;
@@ -775,27 +709,17 @@ function renderRelatorio(){
   function cor(p){ return p>=90?'var(--success)':(p>=70?'var(--primary)':'var(--error)'); }
   var h='';
 
-  if(!total){
-    h+='<div class="rel-sec"><div class="rel-vazio">Nenhuma carga registrada neste dia.</div></div>';
-    document.getElementById('relConteudo').innerHTML=h; return;
-  }
+  if(!total){ h+='<div class="rel-sec"><div class="rel-vazio">Nenhuma carga na nuvem ainda.</div></div>'; document.getElementById('relConteudo').innerHTML=h; return; }
 
-  h+='<div class="ader-grid">';
-  h+='<div class="rel-sec ader-card"><h4>Aderência operação</h4><div class="aderencia-n" style="color:'+cor(aderOp)+'">'+aderOp+'%</div><div class="aderencia-sub">com QR vs sem QR<br>'+comQR+' com · '+semQR+' sem · '+total+' cargas</div></div>';
-  if(aderDisp!=null)
-    h+='<div class="rel-sec ader-card"><h4>Aderência dispatchers</h4><div class="aderencia-n" style="color:'+cor(aderDisp)+'">'+aderDisp+'%</div><div class="aderencia-sub">XPTs com todas as rotas<br>'+completos+' de '+avaliados+' XPTs completos</div></div>';
-  else
-    h+='<div class="rel-sec ader-card"><h4>Aderência dispatchers</h4><div class="aderencia-n" style="color:var(--muted)">—</div><div class="aderencia-sub">plano de rotas deste dia não foi registrado</div></div>';
+  h+='<div class="ader-grid"><div class="rel-sec ader-card"><h4>Aderência operação</h4><div class="aderencia-n" style="color:'+cor(aderOp)+'">'+aderOp+'%</div><div class="aderencia-sub">'+comQR+' com · '+semQR+' sem</div></div>';
+  if(aderDisp!=null) h+='<div class="rel-sec ader-card"><h4>Aderência dispatchers</h4><div class="aderencia-n" style="color:'+cor(aderDisp)+'">'+aderDisp+'%</div><div class="aderencia-sub">'+completos+' de '+avaliados+' XPTs completos</div></div>';
   h+='</div>';
 
-  dispLinhas.sort(function(a,b){
-    var ma=a.tot!=null?(a.tot-a.cob):-1, mb=b.tot!=null?(b.tot-b.cob):-1;
-    return mb-ma;
-  });
-  h+='<div class="rel-sec"><h4>Rotas por XPT · maiores ofensores no topo</h4>';
+  dispLinhas.sort(function(a,b){ var ma=a.tot!=null?(a.tot-a.cob):-1, mb=b.tot!=null?(b.tot-b.cob):-1; return mb-ma; });
+  h+='<div class="rel-sec"><h4>Rotas por XPT</h4>';
   dispLinhas.forEach(function(l){
     var pct = l.tot ? Math.round(l.cob/l.tot*100) : null;
-    var dir = l.tot!=null ? (l.cob+'/'+l.tot+(pct!=null?' · '+pct+'%':'')+(l.ok?' ✓':'')) : (l.cob+' rotas');
+    var dir = l.tot!=null ? (l.cob+'/'+l.tot+(l.ok?' ✓':'')) : (l.cob+' rotas');
     var c = l.ok===true?'var(--success)':(l.ok===false?'var(--error)':'var(--text)');
     h+='<div class="rel-linha"><span>'+l.x+'</span><span class="v" style="color:'+c+'">'+dir+'</span></div>';
   });
@@ -804,57 +728,11 @@ function renderRelatorio(){
   h+='<div class="rel-sec"><h4>Insumos utilizados</h4>';
   Object.keys(porInsumo).forEach(function(i){
     var o=porInsumo[i]; var t=o.com+o.sem; if(!t) return;
-    h+='<div class="rel-linha"><span>'+i+'</span><span class="v">'+t+'<span style="font-weight:400;color:var(--muted);font-size:12px"> ('+o.sem+' sem QR)</span></span></div>';
-  });
-  h+='</div>';
-
-  h+='<div class="rel-sec"><h4>Insumos por rota (cluster)</h4>';
-  Object.keys(porRota).sort().forEach(function(r){
-    h+='<div class="rel-linha"><span style="font-family:Monaco,monospace;font-size:13px">'+r+'</span><span class="v">'+porRota[r]+'</span></div>';
+    h+='<div class="rel-linha"><span>'+i+'</span><span class="v">'+t+'</span></div>';
   });
   h+='</div>';
 
   document.getElementById('relConteudo').innerHTML=h;
-}
-
-function exportarRelatorio(){
-  var dia=relSelDia, regs=lerLogDia(dia);
-  var plano=null; try{ plano=JSON.parse(localStorage.getItem('plano_'+dia)||'null'); }catch(e){}
-  var comQR=regs.filter(function(r){return r.tipo==='ok';}).length;
-  var semQR=regs.filter(function(r){return r.tipo==='semqr';}).length;
-  var total=comQR+semQR, aderOp=total?Math.round(comQR/total*100):0;
-
-  var cobertos={}, ativos={};
-  regs.forEach(function(r){ var x=(r.origem||'').split(' - ')[0]||'—'; ativos[x]=true; if(!cobertos[x])cobertos[x]={}; if(r.cluster)cobertos[x][r.cluster]=true; });
-  var completos=0, avaliados=0;
-  Object.keys(ativos).forEach(function(x){ var tot=plano&&plano[x]?plano[x].length:null; if(tot!=null){avaliados++; if(Object.keys(cobertos[x]).length>=tot&&tot>0)completos++;} });
-  var aderDisp=avaliados?Math.round(completos/avaliados*100):'';
-
-  var L=[];
-  L.push('Relatorio de conferencia;'+formatDia(dia));
-  L.push('');
-  L.push('Aderencia operacao (com QR);'+aderOp+'%');
-  L.push('Com QR;'+comQR);
-  L.push('Sem QR;'+semQR);
-  L.push('Total de cargas;'+total);
-  L.push('Aderencia dispatchers (XPTs completos);'+(aderDisp===''?'(plano nao registrado)':aderDisp+'%'));
-  L.push('XPTs completos;'+completos+' de '+avaliados);
-  L.push('');
-  L.push('Rotas bipadas por XPT');
-  L.push('XPT;Rotas bipadas;Total rotas');
-  Object.keys(ativos).sort().forEach(function(x){ var tot=plano&&plano[x]?plano[x].length:''; L.push(x+';'+Object.keys(cobertos[x]).length+';'+tot); });
-  L.push('');
-  L.push('Detalhe');
-  L.push('Hora;Origem;Cluster;Tipo;Insumo;Carrinho');
-  regs.forEach(function(r){
-    L.push([r.hora, r.origem, r.cluster, (r.tipo==='ok'?'Com QR':'Sem QR'), r.insumo, r.carrinho].join(';'));
-  });
-  var csv='\ufeff'+L.join('\r\n');
-  var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url; a.download='relatorio_'+dia+'.csv';
-  document.body.appendChild(a); a.click(); a.remove();
 }
 
 function svgInsumo(nome){
@@ -871,38 +749,17 @@ function alarme(carrinho, destino, origem){
   document.getElementById('alDestino').textContent = destino;
   document.getElementById('alOrigem').textContent = origem.split(' - ')[0];
   document.getElementById('alarme').classList.remove('hidden');
-  document.getElementById('fbBox').innerHTML='<div class="fb no"><strong>⛔ CARGA ERRADA</strong><div style="margin-top:4px">Carrinho '+carrinho+' é do destino '+destino+'. Separe!</div></div>';
-  tocarAlarme();
-  if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]); 
+  document.getElementById('fbBox').innerHTML='<div class="fb no"><strong>⛔ CARGA ERRADA</strong></div>';
+  tocarAlarme(); if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]); 
 }
-function fecharAlarme(){
-  document.getElementById('alarme').classList.add('hidden');
-  pararAlarme();
-}
+function fecharAlarme(){ document.getElementById('alarme').classList.add('hidden'); pararAlarme(); }
 
-function unlockAudio(){
-  try{
-    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-  }catch(e){}
-}
+function unlockAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} }
 var alarmeTimer = null;
 function tocarAlarme(){
-  unlockAudio();
-  if(!audioCtx) return;
-  var i = 0;
-  function beep(){
-    try{
-      var o = audioCtx.createOscillator();
-      var g = audioCtx.createGain();
-      o.type = 'square'; o.frequency.value = 880;
-      g.gain.value = 0.25;
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(); o.stop(audioCtx.currentTime + 0.25);
-    }catch(e){}
-  }
-  beep();
-  alarmeTimer = setInterval(function(){ i++; if(i>8){pararAlarme();return;} beep(); }, 450);
+  unlockAudio(); if(!audioCtx) return; var i=0;
+  function beep(){ try{ var o=audioCtx.createOscillator(); var g=audioCtx.createGain(); o.type='square'; o.frequency.value=880; g.gain.value=0.25; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.25); }catch(e){} }
+  beep(); alarmeTimer = setInterval(function(){ i++; if(i>8){pararAlarme();return;} beep(); }, 450);
 }
 function pararAlarme(){ if(alarmeTimer){ clearInterval(alarmeTimer); alarmeTimer=null; } }
 
@@ -913,7 +770,9 @@ function render(){
   document.getElementById('cSq').textContent = cSq;
   document.getElementById('hcount').textContent = scans.length;
   var h=document.getElementById('hist'); h.innerHTML='';
-  scans.forEach(function(s){
+  
+  // Limita a exibição do histórico na tela a 50 itens para não travar o celular, embora a nuvem tenha todos
+  scans.slice(0, 50).forEach(function(s){
     var cls = s.tipo==='ok' ? 'ok' : (s.tipo==='erro' ? 'no' : 'warn');
     var marca = s.tipo==='ok' ? '✓' : (s.tipo==='erro' ? '✕' : '⚠');
     var rotaTxt = s.cluster ? (' · '+s.cluster) : (s.tipo==='semqr' ? ' · rota não id.' : '');
@@ -926,27 +785,21 @@ function render(){
     if(editavel){ d.style.cursor='pointer'; d.onclick=function(){ editarInsumo(s.id); }; }
     h.appendChild(d);
   });
-  if(scans.length){ document.getElementById('histBox').classList.remove('hidden'); document.getElementById('reset').classList.remove('hidden'); }
-}
+  
+  // Inclui os erros locais que não sobem pra nuvem
+  var localErros = []; try{ localErros = JSON.parse(localStorage.getItem(chaveEstado())||"[]"); }catch(e){}
+  localErros.slice(0,10).forEach(function(s){
+    var cls = s.tipo==='erro' ? 'no' : 'warn'; var marca = s.tipo==='erro' ? '✕' : '⚠';
+    var d=document.createElement('div'); d.className='hist-item '+cls;
+    d.innerHTML='<div><div>'+s.carrinho+(s.tipo==='erro'?' → '+s.destino:' [não achado]')+'</div><div style="font-size:10px;color:var(--muted)">'+s.t+'</div></div><div>'+marca+'</div>';
+    h.appendChild(d);
+  });
 
-function limparSessao(){
-  scans=[]; cOk=0; cErro=0; cNf=0; cSq=0;
-  clustersFeitos={}; clusterQtd={};
-  try{ if(selectedOrigin) localStorage.removeItem(chaveEstado()); }catch(e){}
-  document.getElementById('fbBox').innerHTML='';
-  document.getElementById('histBox').classList.add('hidden');
-  document.getElementById('reset').classList.add('hidden');
-  renderClusters(); render();
+  if(scans.length || localErros.length){ document.getElementById('histBox').classList.remove('hidden'); }
 }
 
 var rafQR = null;
-
-function aoLer(text){
-  if(!camOn) return;
-  closeCam();
-  doScan(String(text));
-}
-
+function aoLer(text){ if(!camOn) return; closeCam(); doScan(String(text)); }
 var videoTrack = null, torchOn = false;
 
 async function openCam(){
@@ -957,74 +810,23 @@ async function openCam(){
   camOn = true;
   try{
     var stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width:  { ideal: 1280 }, // <--- RESOLUÇÃO ALTERADA AQUI
-        height: { ideal: 720 },  // <--- RESOLUÇÃO ALTERADA AQUI
-        frameRate: { ideal: 30 },
-        advanced: [{ focusMode: 'continuous' }]
-      }
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, advanced: [{ focusMode: 'continuous' }] }
     });
-    video.srcObject = stream;
-    video.setAttribute('playsinline','');
-    video.muted = true;
-    await video.play();
-
-    videoTrack = stream.getVideoTracks()[0];
-    aplicarFocoContinuo();
-    prepararTorch();
-    loopQR();
-  }catch(err){
-    alert('Erro na câmera: ' + err.message);
-    closeCam();
-  }
+    video.srcObject = stream; video.setAttribute('playsinline',''); video.muted = true; await video.play();
+    videoTrack = stream.getVideoTracks()[0]; aplicarFocoContinuo(); prepararTorch(); loopQR();
+  }catch(err){ alert('Erro na câmera: ' + err.message); closeCam(); }
 }
 
-function aplicarFocoContinuo(){
-  if(!videoTrack || !videoTrack.applyConstraints) return;
-  try{
-    var cap = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-    var adv = [];
-    if(cap.focusMode && cap.focusMode.indexOf('continuous')>=0) adv.push({focusMode:'continuous'});
-    if(adv.length) videoTrack.applyConstraints({advanced:adv}).catch(function(){});
-  }catch(e){}
-}
-function focarCamera(){
-  if(!videoTrack || !videoTrack.applyConstraints) return;
-  try{
-    var cap = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-    if(cap.focusMode && cap.focusMode.indexOf('single-shot')>=0){
-      videoTrack.applyConstraints({advanced:[{focusMode:'single-shot'}]}).then(function(){
-        setTimeout(aplicarFocoContinuo, 800);
-      }).catch(function(){});
-    } else { aplicarFocoContinuo(); }
-    var s=document.getElementById('camStatus'); if(s){ s.textContent='Focando…'; setTimeout(function(){s.textContent='Centralize o QR na mira • toque para focar';},700); }
-  }catch(e){}
-}
-function prepararTorch(){
-  torchOn = false;
-  var btn=document.getElementById('torchBtn');
-  try{
-    var cap = videoTrack && videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-    if(cap.torch){ btn.classList.remove('hidden'); btn.textContent='🔦 Lanterna'; }
-    else btn.classList.add('hidden');
-  }catch(e){ btn.classList.add('hidden'); }
-}
-function toggleTorch(ev){
-  if(ev) ev.stopPropagation();
-  if(!videoTrack) return;
-  torchOn = !torchOn;
-  try{ videoTrack.applyConstraints({advanced:[{torch:torchOn}]}).catch(function(){}); }catch(e){}
-  var btn=document.getElementById('torchBtn'); if(btn) btn.textContent = torchOn ? '🔦 Lanterna (ligada)' : '🔦 Lanterna';
-}
+function aplicarFocoContinuo(){ try{ var cap=videoTrack.getCapabilities?videoTrack.getCapabilities():{}; var adv=[]; if(cap.focusMode&&cap.focusMode.indexOf('continuous')>=0)adv.push({focusMode:'continuous'}); if(adv.length)videoTrack.applyConstraints({advanced:adv}).catch(function(){}); }catch(e){} }
+function focarCamera(){ try{ var cap=videoTrack.getCapabilities?videoTrack.getCapabilities():{}; if(cap.focusMode&&cap.focusMode.indexOf('single-shot')>=0){ videoTrack.applyConstraints({advanced:[{focusMode:'single-shot'}]}).then(function(){ setTimeout(aplicarFocoContinuo,800); }).catch(function(){}); }else{aplicarFocoContinuo();} var s=document.getElementById('camStatus'); if(s){ s.textContent='Focando…'; setTimeout(function(){s.textContent='Centralize o QR na mira • toque para focar';},700); } }catch(e){} }
+function prepararTorch(){ torchOn=false; var btn=document.getElementById('torchBtn'); try{ var cap=videoTrack&&videoTrack.getCapabilities?videoTrack.getCapabilities():{}; if(cap.torch){btn.classList.remove('hidden');btn.textContent='🔦 Lanterna';} else btn.classList.add('hidden'); }catch(e){ btn.classList.add('hidden'); } }
+function toggleTorch(ev){ if(ev)ev.stopPropagation(); if(!videoTrack)return; torchOn=!torchOn; try{videoTrack.applyConstraints({advanced:[{torch:torchOn}]}).catch(function(){});}catch(e){} var btn=document.getElementById('torchBtn'); if(btn)btn.textContent=torchOn?'🔦 Lanterna (ligada)':'🔦 Lanterna'; }
 
 function loopQR(){
   var video = document.getElementById('camVideo');
   var canvas = document.createElement('canvas');
   var ctx = canvas.getContext('2d', { willReadFrequently: true });
   var ultimo = 0;
-  // var confirma = null; // <--- DUPLA CONFIRMAÇÃO REMOVIDA AQUI
-
   (function tick(ts){
     if(!camOn) return;
     if(!ts) ts = 0;
@@ -1033,18 +835,14 @@ function loopQR(){
       try{
         var vw = video.videoWidth, vh = video.videoHeight;
         if(vw && vh){
-          var maxLado = 800; // <--- PROCESSAMENTO MÁXIMO REDUZIDO DE 1920 PARA 800
+          var maxLado = 800;
           var escala = Math.max(vw, vh) > maxLado ? maxLado / Math.max(vw, vh) : 1;
           var cw = Math.round(vw * escala), ch = Math.round(vh * escala);
           canvas.width = cw; canvas.height = ch;
           ctx.drawImage(video, 0, 0, cw, ch);
           var img = ctx.getImageData(0, 0, cw, ch);
-          var qr = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' }); // <--- ALTERADO PARA dontInvert
-          
-          if(qr && qr.data){
-            aoLer(qr.data); // <--- LÊ DIRETO NO PRIMEIRO SUCESSO
-            return;
-          }
+          var qr = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+          if(qr && qr.data){ aoLer(qr.data); return; }
         }
       }catch(e){}
     }
