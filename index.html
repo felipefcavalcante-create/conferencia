@@ -355,10 +355,10 @@ function onOrigin(e){
     document.getElementById('originPicker').classList.add('hidden');
     document.getElementById('originFixed').classList.remove('hidden');
     document.getElementById('work').classList.remove('hidden');
-    carregarEstado();     
-    carregarClusters();   
+    carregarEstado();      
+    carregarClusters();    
     render();
-    salvarEstado();       
+    salvarEstado();        
     fecharInsumo();
   }
 }
@@ -959,8 +959,8 @@ async function openCam(){
     var stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: 'environment' },
-        width:  { ideal: 2560 },
-        height: { ideal: 1440 },
+        width:  { ideal: 1280 }, // <--- RESOLUÇÃO ALTERADA AQUI
+        height: { ideal: 720 },  // <--- RESOLUÇÃO ALTERADA AQUI
         frameRate: { ideal: 30 },
         advanced: [{ focusMode: 'continuous' }]
       }
@@ -1023,7 +1023,7 @@ function loopQR(){
   var canvas = document.createElement('canvas');
   var ctx = canvas.getContext('2d', { willReadFrequently: true });
   var ultimo = 0;
-  var confirma = null;   
+  // var confirma = null; // <--- DUPLA CONFIRMAÇÃO REMOVIDA AQUI
 
   (function tick(ts){
     if(!camOn) return;
@@ -1033,18 +1033,17 @@ function loopQR(){
       try{
         var vw = video.videoWidth, vh = video.videoHeight;
         if(vw && vh){
-          var maxLado = 1920;       
+          var maxLado = 800; // <--- PROCESSAMENTO MÁXIMO REDUZIDO DE 1920 PARA 800
           var escala = Math.max(vw, vh) > maxLado ? maxLado / Math.max(vw, vh) : 1;
           var cw = Math.round(vw * escala), ch = Math.round(vh * escala);
           canvas.width = cw; canvas.height = ch;
           ctx.drawImage(video, 0, 0, cw, ch);
           var img = ctx.getImageData(0, 0, cw, ch);
-          var qr = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+          var qr = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' }); // <--- ALTERADO PARA dontInvert
+          
           if(qr && qr.data){
-            if(qr.data === confirma){ aoLer(qr.data); return; }
-            confirma = qr.data;
-          } else {
-            confirma = null;
+            aoLer(qr.data); // <--- LÊ DIRETO NO PRIMEIRO SUCESSO
+            return;
           }
         }
       }catch(e){}
